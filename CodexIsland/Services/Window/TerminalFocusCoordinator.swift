@@ -14,6 +14,10 @@ actor TerminalFocusCoordinator {
     private init() {}
 
     func focus(session: SessionState) async -> Bool {
+        if !session.isInTmux, await NativeTerminalScriptFocuser.shared.focus(session: session) {
+            return true
+        }
+
         var target = session.focusTarget
 
         if target == nil || session.focusCapability != .ready {

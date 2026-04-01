@@ -10,6 +10,7 @@ Codex Island hook helper.
 import json
 import os
 import socket
+import subprocess
 import sys
 from datetime import datetime
 
@@ -28,8 +29,6 @@ def append_debug(record):
 def get_tty():
     parent_pid = os.getppid()
     try:
-        import subprocess
-
         result = subprocess.run(
             ["ps", "-p", str(parent_pid), "-o", "tty="],
             capture_output=True,
@@ -51,6 +50,44 @@ def get_tty():
     except OSError:
         pass
     return None
+
+
+def get_terminal_context(terminal_name):
+    normalized = (terminal_name or "").lower()
+    if normalized != "ghostty":
+        return {}
+
+    script = """
+tell application "Ghostty"
+    set windowID to id of front window as text
+    set tabID to id of selected tab of front window as text
+    set terminalID to id of focused terminal of selected tab of front window as text
+    return windowID & "|" & tabID & "|" & terminalID
+end tell
+"""
+
+    try:
+        result = subprocess.run(
+            ["/usr/bin/osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        if result.returncode != 0:
+            return {}
+
+        output = result.stdout.strip()
+        parts = output.split("|")
+        if len(parts) != 3:
+            return {}
+
+        return {
+            "terminal_window_id": parts[0] or None,
+            "terminal_tab_id": parts[1] or None,
+            "terminal_surface_id": parts[2] or None,
+        }
+    except Exception:
+        return {}
 
 
 def send_event(state):
@@ -108,6 +145,7 @@ def main():
     transcript_path = payload.get("transcript_path")
     turn_id = payload.get("turn_id")
     tool_name, tool_input = normalize_tool_input(payload)
+    terminal_name = os.environ.get("TERM_PROGRAM") or os.environ.get("TERM")
 
     state = {
         "provider": "codex",
@@ -118,8 +156,9 @@ def main():
         "event": event,
         "pid": os.getppid(),
         "tty": get_tty(),
-        "terminal_name": os.environ.get("TERM_PROGRAM") or os.environ.get("TERM"),
+        "terminal_name": terminal_name,
     }
+    state.update(get_terminal_context(terminal_name))
 
     if event == "SessionStart":
         state["status"] = "waiting_for_input"

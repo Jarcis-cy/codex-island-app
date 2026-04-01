@@ -23,6 +23,9 @@ struct HookEvent: Codable, Sendable {
     let pid: Int?
     let tty: String?
     let terminalName: String?
+    let terminalWindowId: String?
+    let terminalTabId: String?
+    let terminalSurfaceId: String?
     let turnId: String?
     let tool: String?
     let toolInput: [String: AnyCodable]?
@@ -34,6 +37,9 @@ struct HookEvent: Codable, Sendable {
         case sessionId = "session_id"
         case provider, cwd, event, status, pid, tty
         case terminalName = "terminal_name"
+        case terminalWindowId = "terminal_window_id"
+        case terminalTabId = "terminal_tab_id"
+        case terminalSurfaceId = "terminal_surface_id"
         case transcriptPath = "transcript_path"
         case turnId = "turn_id"
         case tool
@@ -44,7 +50,7 @@ struct HookEvent: Codable, Sendable {
     }
 
     /// Create a copy with updated toolUseId
-    init(sessionId: String, provider: SessionProvider, cwd: String, transcriptPath: String?, event: String, status: String, pid: Int?, tty: String?, terminalName: String?, turnId: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
+    init(sessionId: String, provider: SessionProvider, cwd: String, transcriptPath: String?, event: String, status: String, pid: Int?, tty: String?, terminalName: String?, terminalWindowId: String?, terminalTabId: String?, terminalSurfaceId: String?, turnId: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
         self.sessionId = sessionId
         self.provider = provider
         self.cwd = cwd
@@ -54,6 +60,9 @@ struct HookEvent: Codable, Sendable {
         self.pid = pid
         self.tty = tty
         self.terminalName = terminalName
+        self.terminalWindowId = terminalWindowId
+        self.terminalTabId = terminalTabId
+        self.terminalSurfaceId = terminalSurfaceId
         self.turnId = turnId
         self.tool = tool
         self.toolInput = toolInput
@@ -73,6 +82,9 @@ struct HookEvent: Codable, Sendable {
         pid = try container.decodeIfPresent(Int.self, forKey: .pid)
         tty = try container.decodeIfPresent(String.self, forKey: .tty)
         terminalName = try container.decodeIfPresent(String.self, forKey: .terminalName)
+        terminalWindowId = try container.decodeIfPresent(String.self, forKey: .terminalWindowId)
+        terminalTabId = try container.decodeIfPresent(String.self, forKey: .terminalTabId)
+        terminalSurfaceId = try container.decodeIfPresent(String.self, forKey: .terminalSurfaceId)
         turnId = try container.decodeIfPresent(String.self, forKey: .turnId)
         tool = try container.decodeIfPresent(String.self, forKey: .tool)
         toolInput = try container.decodeIfPresent([String: AnyCodable].self, forKey: .toolInput)
@@ -92,6 +104,9 @@ struct HookEvent: Codable, Sendable {
         try container.encodeIfPresent(pid, forKey: .pid)
         try container.encodeIfPresent(tty, forKey: .tty)
         try container.encodeIfPresent(terminalName, forKey: .terminalName)
+        try container.encodeIfPresent(terminalWindowId, forKey: .terminalWindowId)
+        try container.encodeIfPresent(terminalTabId, forKey: .terminalTabId)
+        try container.encodeIfPresent(terminalSurfaceId, forKey: .terminalSurfaceId)
         try container.encodeIfPresent(turnId, forKey: .turnId)
         try container.encodeIfPresent(tool, forKey: .tool)
         try container.encodeIfPresent(toolInput, forKey: .toolInput)
@@ -496,6 +511,9 @@ class HookSocketServer {
                 pid: event.pid,
                 tty: event.tty,
                 terminalName: event.terminalName,
+                terminalWindowId: event.terminalWindowId,
+                terminalTabId: event.terminalTabId,
+                terminalSurfaceId: event.terminalSurfaceId,
                 turnId: event.turnId,
                 tool: event.tool,
                 toolInput: event.toolInput,

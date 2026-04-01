@@ -26,6 +26,9 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var terminalName: String?
     var terminalBundleId: String?
     var terminalProcessId: Int?
+    var terminalWindowId: String?
+    var terminalTabId: String?
+    var terminalSurfaceId: String?
     var isInTmux: Bool
     var focusTarget: TerminalFocusTarget?
     var focusCapability: TerminalFocusCapability
@@ -82,6 +85,9 @@ struct SessionState: Equatable, Identifiable, Sendable {
         terminalName: String? = nil,
         terminalBundleId: String? = nil,
         terminalProcessId: Int? = nil,
+        terminalWindowId: String? = nil,
+        terminalTabId: String? = nil,
+        terminalSurfaceId: String? = nil,
         isInTmux: Bool = false,
         focusTarget: TerminalFocusTarget? = nil,
         focusCapability: TerminalFocusCapability = .unresolved,
@@ -107,6 +113,9 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.terminalName = terminalName
         self.terminalBundleId = terminalBundleId
         self.terminalProcessId = terminalProcessId
+        self.terminalWindowId = terminalWindowId
+        self.terminalTabId = terminalTabId
+        self.terminalSurfaceId = terminalSurfaceId
         self.isInTmux = isInTmux
         self.focusTarget = focusTarget
         self.focusCapability = focusCapability
@@ -210,7 +219,12 @@ struct SessionState: Equatable, Identifiable, Sendable {
     }
 
     var canAttemptFocusTerminal: Bool {
-        pid != nil || terminalProcessId != nil || terminalBundleId != nil || terminalName != nil
+        pid != nil ||
+        terminalProcessId != nil ||
+        terminalBundleId != nil ||
+        terminalName != nil ||
+        terminalWindowId != nil ||
+        terminalSurfaceId != nil
     }
 }
 

@@ -131,6 +131,9 @@ actor SessionStore {
         session.transcriptPath = event.transcriptPath ?? session.transcriptPath
         session.pid = event.pid
         session.terminalName = event.terminalName ?? session.terminalName
+        session.terminalWindowId = event.terminalWindowId ?? session.terminalWindowId
+        session.terminalTabId = event.terminalTabId ?? session.terminalTabId
+        session.terminalSurfaceId = event.terminalSurfaceId ?? session.terminalSurfaceId
         if let pid = event.pid {
             let tree = ProcessTreeBuilder.shared.buildTree()
             session.isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: pid, tree: tree)
@@ -195,6 +198,9 @@ actor SessionStore {
             pid: event.pid,
             tty: event.tty?.replacingOccurrences(of: "/dev/", with: ""),
             terminalName: event.terminalName,
+            terminalWindowId: event.terminalWindowId,
+            terminalTabId: event.terminalTabId,
+            terminalSurfaceId: event.terminalSurfaceId,
             isInTmux: false,  // Will be updated
             phase: .idle
         )
