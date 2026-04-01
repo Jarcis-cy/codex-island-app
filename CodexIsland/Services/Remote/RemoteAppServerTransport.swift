@@ -19,10 +19,13 @@ protocol RemoteAppServerTransport: Sendable {
 
 final class SSHStdioTransport: RemoteAppServerTransport, @unchecked Sendable {
     private let host: RemoteHostConfig
+    private let ioQueue = DispatchQueue(label: "com.codexisland.remote-transport", qos: .userInitiated)
     private var process: Process?
     private var stdinHandle: FileHandle?
-    private var stdoutTask: Task<Void, Never>?
-    private var stderrTask: Task<Void, Never>?
+    private var stdoutSource: DispatchSourceRead?
+    private var stderrSource: DispatchSourceRead?
+    private var stdoutBuffer = Data()
+    private var stderrBuffer = Data()
 
     init(host: RemoteHostConfig) {
         self.host = host
@@ -52,7 +55,7 @@ final class SSHStdioTransport: RemoteAppServerTransport, @unchecked Sendable {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
         process.terminationHandler = { terminatedProcess in
-            Task.detached {
+            Task {
                 await onTermination(terminatedProcess.terminationStatus)
             }
         }
@@ -80,10 +83,12 @@ final class SSHStdioTransport: RemoteAppServerTransport, @unchecked Sendable {
     }
 
     func stop() async {
-        stdoutTask?.cancel()
-        stderrTask?.cancel()
-        stdoutTask = nil
-        stderrTask = nil
+        stdoutSource?.cancel()
+        stderrSource?.cancel()
+        stdoutSource = nil
+        stderrSource = nil
+        stdoutBuffer.removeAll(keepingCapacity: false)
+        stderrBuffer.removeAll(keepingCapacity: false)
 
         try? stdinHandle?.close()
         stdinHandle = nil
@@ -102,23 +107,58 @@ final class SSHStdioTransport: RemoteAppServerTransport, @unchecked Sendable {
         onStdoutLine: @escaping @Sendable (String) async -> Void,
         onStderrLine: @escaping @Sendable (String) async -> Void
     ) {
-        stdoutTask = Task.detached {
-            do {
-                for try await line in stdout.bytes.lines {
-                    await onStdoutLine(String(line))
-                }
-            } catch {
-                return
-            }
+        let stdoutSource = DispatchSource.makeReadSource(fileDescriptor: stdout.fileDescriptor, queue: ioQueue)
+        stdoutSource.setEventHandler { [weak self] in
+            self?.drainStdout(handle: stdout, forward: onStdoutLine)
         }
+        stdoutSource.setCancelHandler {
+            try? stdout.close()
+        }
+        stdoutSource.resume()
+        self.stdoutSource = stdoutSource
 
-        stderrTask = Task.detached {
-            do {
-                for try await line in stderr.bytes.lines {
-                    await onStderrLine(String(line))
-                }
-            } catch {
-                return
+        let stderrSource = DispatchSource.makeReadSource(fileDescriptor: stderr.fileDescriptor, queue: ioQueue)
+        stderrSource.setEventHandler { [weak self] in
+            self?.drainStderr(handle: stderr, forward: onStderrLine)
+        }
+        stderrSource.setCancelHandler {
+            try? stderr.close()
+        }
+        stderrSource.resume()
+        self.stderrSource = stderrSource
+    }
+
+    private func drainStdout(
+        handle: FileHandle,
+        forward: @escaping @Sendable (String) async -> Void
+    ) {
+        drain(handle: handle, buffer: &stdoutBuffer, forward: forward)
+    }
+
+    private func drainStderr(
+        handle: FileHandle,
+        forward: @escaping @Sendable (String) async -> Void
+    ) {
+        drain(handle: handle, buffer: &stderrBuffer, forward: forward)
+    }
+
+    private func drain(
+        handle: FileHandle,
+        buffer: inout Data,
+        forward: @escaping @Sendable (String) async -> Void
+    ) {
+        let data = handle.availableData
+        guard !data.isEmpty else { return }
+
+        buffer.append(data)
+        let newline = Data([0x0A])
+
+        while let range = buffer.range(of: newline) {
+            let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
+            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+            guard let line = String(data: lineData, encoding: .utf8), !line.isEmpty else { continue }
+            Task {
+                await forward(line)
             }
         }
     }
