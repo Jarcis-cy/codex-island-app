@@ -14,8 +14,27 @@ actor TerminalFocusCoordinator {
     private init() {}
 
     func focus(session: SessionState) async -> Bool {
-        guard let target = session.focusTarget else {
-            return false
+        var target = session.focusTarget
+
+        if target == nil || session.focusCapability != .ready {
+            let resolution = await TerminalWindowResolver.shared.resolve(for: session)
+            target = resolution.focusTarget
+
+            if resolution.focusCapability == .ready, let resolvedTarget = target {
+                switch resolvedTarget.kind {
+                case .tmuxPane:
+                    return await focusTmuxTarget(session: session, target: resolvedTarget)
+                case .nativeWindow:
+                    let capability = await NativeTerminalWindowResolver.shared.focus(target: resolvedTarget)
+                    if capability == .ready {
+                        return true
+                    }
+                }
+            }
+        }
+
+        guard let target else {
+            return await focusFallback(session: session)
         }
 
         switch target.kind {
@@ -23,7 +42,17 @@ actor TerminalFocusCoordinator {
             return await focusTmuxTarget(session: session, target: target)
         case .nativeWindow:
             let capability = await NativeTerminalWindowResolver.shared.focus(target: target)
-            return capability == .ready
+            if capability == .stale {
+                let resolution = await TerminalWindowResolver.shared.resolve(for: session)
+                if let refreshedTarget = resolution.focusTarget,
+                   await NativeTerminalWindowResolver.shared.focus(target: refreshedTarget) == .ready {
+                    return true
+                }
+            }
+            if capability == .ready {
+                return true
+            }
+            return await focusFallback(session: session)
         }
     }
 
@@ -47,13 +76,25 @@ actor TerminalFocusCoordinator {
     }
 
     private func focusFallback(session: SessionState) async -> Bool {
+        if session.isInTmux {
+            if let pid = session.pid, await YabaiController.shared.focusWindow(forClaudePid: pid) {
+                return true
+            }
+
+            if await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd) {
+                return true
+            }
+        }
+
         if let appPid = session.terminalProcessId,
            let app = NSRunningApplication(processIdentifier: pid_t(appPid)) {
             return app.activate(options: [.activateAllWindows])
         }
 
-        if let bundleId = session.terminalBundleId,
-           let app = NSWorkspace.shared.runningApplications.first(where: { $0.bundleIdentifier == bundleId }) {
+        if let app = TerminalAppRegistry.runningApplication(
+            bundleId: session.terminalBundleId,
+            hint: session.terminalName
+        ) {
             return app.activate(options: [.activateAllWindows])
         }
 

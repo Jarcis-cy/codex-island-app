@@ -5,6 +5,7 @@
 //  Centralized registry of known terminal applications
 //
 
+import AppKit
 import Foundation
 
 /// Registry of known terminal application names and bundle identifiers
@@ -70,5 +71,70 @@ struct TerminalAppRegistry: Sendable {
     /// Check if a bundle identifier is a known terminal
     static func isTerminalBundle(_ bundleId: String) -> Bool {
         bundleIdentifiers.contains(bundleId)
+    }
+
+    /// Infer likely terminal bundle IDs from TERM_PROGRAM / terminal app hints.
+    static func candidateBundleIdentifiers(for hint: String?) -> [String] {
+        guard let hint else { return [] }
+
+        let normalized = hint.lowercased()
+        if normalized.contains("apple_terminal") || normalized == "terminal" {
+            return ["com.apple.Terminal"]
+        }
+        if normalized.contains("iterm") {
+            return ["com.googlecode.iterm2"]
+        }
+        if normalized.contains("ghostty") {
+            return ["com.mitchellh.ghostty"]
+        }
+        if normalized.contains("wezterm") {
+            return ["com.github.wez.wezterm"]
+        }
+        if normalized.contains("warp") {
+            return ["dev.warp.Warp-Stable"]
+        }
+        if normalized.contains("kitty") {
+            return ["net.kovidgoyal.kitty"]
+        }
+        if normalized.contains("alacritty") {
+            return ["io.alacritty", "org.alacritty"]
+        }
+        if normalized.contains("hyper") {
+            return ["co.zeit.hyper"]
+        }
+        if normalized.contains("cursor") {
+            return ["com.todesktop.230313mzl4w4u92"]
+        }
+        if normalized.contains("windsurf") {
+            return ["com.exafunction.windsurf"]
+        }
+        if normalized.contains("zed") {
+            return ["dev.zed.Zed"]
+        }
+        if normalized.contains("code") {
+            return ["com.microsoft.VSCode", "com.microsoft.VSCodeInsiders"]
+        }
+
+        return []
+    }
+
+    static func runningApplication(bundleId: String?, hint: String?) -> NSRunningApplication? {
+        let runningApps = NSWorkspace.shared.runningApplications
+
+        if let bundleId,
+           let app = runningApps.first(where: { $0.bundleIdentifier == bundleId }) {
+            return app
+        }
+
+        for candidate in candidateBundleIdentifiers(for: hint) {
+            if let app = runningApps.first(where: { $0.bundleIdentifier == candidate }) {
+                return app
+            }
+        }
+
+        return runningApps.first { app in
+            guard let bundleId = app.bundleIdentifier else { return false }
+            return isTerminalBundle(bundleId)
+        }
     }
 }

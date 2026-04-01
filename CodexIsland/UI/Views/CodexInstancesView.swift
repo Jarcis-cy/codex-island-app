@@ -88,7 +88,7 @@ struct CodexInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        guard session.canFocusTerminal else { return }
+        guard session.canAttemptFocusTerminal else { return }
 
         Task {
             _ = await TerminalFocusCoordinator.shared.focus(session: session)
@@ -238,7 +238,7 @@ struct InstanceRow: View {
 
                     // Go to Terminal button (only if yabai available)
                     TerminalButton(
-                        isEnabled: session.canFocusTerminal,
+                        isEnabled: session.canAttemptFocusTerminal,
                         onTap: { onFocus() }
                     )
                 }
@@ -257,7 +257,7 @@ struct InstanceRow: View {
                         onChat()
                     }
 
-                    if session.canFocusTerminal {
+                    if session.canAttemptFocusTerminal {
                         IconButton(icon: "eye") {
                             onFocus()
                         }
@@ -278,7 +278,7 @@ struct InstanceRow: View {
         .padding(.vertical, 10)
         .contentShape(Rectangle())
         .onTapGesture {
-            if session.canFocusTerminal {
+            if session.canAttemptFocusTerminal {
                 onFocus()
             }
         }

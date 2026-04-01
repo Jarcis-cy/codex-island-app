@@ -422,7 +422,7 @@ struct ChatView: View {
     /// Bar for interactive tools like AskUserQuestion that need terminal input
     private var interactivePromptBar: some View {
         ChatInteractivePromptBar(
-            isEnabled: session.canFocusTerminal,
+            isEnabled: session.canAttemptFocusTerminal,
             onGoToTerminal: { focusTerminal() }
         )
     }

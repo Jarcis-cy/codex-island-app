@@ -208,6 +208,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var canFocusTerminal: Bool {
         focusCapability == .ready
     }
+
+    var canAttemptFocusTerminal: Bool {
+        pid != nil || terminalProcessId != nil || terminalBundleId != nil || terminalName != nil
+    }
 }
 
 // MARK: - Tool Tracker
