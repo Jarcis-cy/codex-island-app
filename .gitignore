@@ -42,3 +42,19 @@ releases/
 # Xcode backup
 *.xcodeproj.backup/
 CLAUDE.md
+AGENTS.md
+
+# Local temp directories
+tmp/
+temp/
+.tmp/
+.temp/
+.cache/
+coverage/
+dist/
+target/
+
+# Hidden local directories
+.[!.]*/
+!.git/
+!.github/
