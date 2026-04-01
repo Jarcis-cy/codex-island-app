@@ -35,7 +35,7 @@ struct RemoteHostsView: View {
                                 onConnect: { remoteSessionMonitor.connectHost(id: host.id) },
                                 onDisconnect: { remoteSessionMonitor.disconnectHost(id: host.id) },
                                 onStartThread: {
-                                    Task {
+                                    Task.detached(priority: .userInitiated) {
                                         do {
                                             let thread = try await remoteSessionMonitor.startThread(hostId: host.id)
                                             await MainActor.run {
