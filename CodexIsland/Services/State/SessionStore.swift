@@ -119,6 +119,9 @@ actor SessionStore {
         let sessionId = event.sessionId
         let isNewSession = sessions[sessionId] == nil
         var session = sessions[sessionId] ?? createSession(from: event)
+        let previousPid = session.pid
+        let previousTTY = session.tty
+        let previousTmuxState = session.isInTmux
 
         // Track new session in Mixpanel
         if isNewSession {
@@ -136,6 +139,17 @@ actor SessionStore {
             session.tty = tty.replacingOccurrences(of: "/dev/", with: "")
         }
         session.lastActivity = Date()
+
+        if shouldRefreshTerminalFocus(
+            isNewSession: isNewSession,
+            previousPid: previousPid,
+            previousTTY: previousTTY,
+            previousTmuxState: previousTmuxState,
+            session: session
+        ) {
+            let resolution = await TerminalWindowResolver.shared.resolve(for: session)
+            applyTerminalResolution(resolution, to: &session)
+        }
 
         if event.status == "ended" {
             sessions.removeValue(forKey: sessionId)
@@ -184,6 +198,35 @@ actor SessionStore {
             isInTmux: false,  // Will be updated
             phase: .idle
         )
+    }
+
+    private func shouldRefreshTerminalFocus(
+        isNewSession: Bool,
+        previousPid: Int?,
+        previousTTY: String?,
+        previousTmuxState: Bool,
+        session: SessionState
+    ) -> Bool {
+        if isNewSession || session.focusTarget == nil {
+            return true
+        }
+
+        if previousPid != session.pid || previousTTY != session.tty || previousTmuxState != session.isInTmux {
+            return true
+        }
+
+        if session.focusCapability == .unresolved && session.pid != nil {
+            return true
+        }
+
+        return false
+    }
+
+    private func applyTerminalResolution(_ resolution: TerminalWindowResolution, to session: inout SessionState) {
+        session.terminalBundleId = resolution.terminalBundleId ?? session.terminalBundleId
+        session.terminalProcessId = resolution.terminalProcessId ?? session.terminalProcessId
+        session.focusTarget = resolution.focusTarget
+        session.focusCapability = resolution.focusCapability
     }
 
     private func processToolTracking(event: HookEvent, session: inout SessionState) {

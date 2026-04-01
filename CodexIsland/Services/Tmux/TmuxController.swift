@@ -21,6 +21,10 @@ actor TmuxController {
         await TmuxTargetFinder.shared.findTarget(forWorkingDirectory: dir)
     }
 
+    func findTmuxTarget(forTTY tty: String) async -> TmuxTarget? {
+        await TmuxTargetFinder.shared.findTarget(forTTY: tty)
+    }
+
     func sendMessage(_ message: String, to target: TmuxTarget) async -> Bool {
         await ToolApprovalHandler.shared.sendMessage(message, to: target)
     }

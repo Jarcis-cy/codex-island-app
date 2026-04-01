@@ -69,6 +69,35 @@ actor TmuxTargetFinder {
         return nil
     }
 
+    /// Find the tmux target for a given pane TTY
+    func findTarget(forTTY tty: String) async -> TmuxTarget? {
+        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
+            return nil
+        }
+
+        guard let output = await runTmuxCommand(tmuxPath: tmuxPath, args: [
+            "list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index} #{pane_tty}"
+        ]) else {
+            return nil
+        }
+
+        let normalizedTTY = tty.replacingOccurrences(of: "/dev/", with: "")
+
+        for line in output.components(separatedBy: "\n") {
+            let parts = line.split(separator: " ", maxSplits: 1)
+            guard parts.count == 2 else { continue }
+
+            let targetString = String(parts[0])
+            let paneTTY = String(parts[1]).replacingOccurrences(of: "/dev/", with: "")
+
+            if paneTTY == normalizedTTY {
+                return TmuxTarget(from: targetString)
+            }
+        }
+
+        return nil
+    }
+
     /// Check if a session's tmux pane is currently the active pane
     func isSessionPaneActive(claudePid: Int) async -> Bool {
         guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {

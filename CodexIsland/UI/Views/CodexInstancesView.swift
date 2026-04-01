@@ -88,14 +88,10 @@ struct CodexInstancesView: View {
     // MARK: - Actions
 
     private func focusSession(_ session: SessionState) {
-        guard session.isInTmux else { return }
+        guard session.canFocusTerminal else { return }
 
         Task {
-            if let pid = session.pid {
-                _ = await YabaiController.shared.focusWindow(forClaudePid: pid)
-            } else {
-                _ = await YabaiController.shared.focusWindow(forWorkingDirectory: session.cwd)
-            }
+            _ = await TerminalFocusCoordinator.shared.focus(session: session)
         }
     }
 
@@ -128,7 +124,6 @@ struct InstanceRow: View {
 
     @State private var isHovered = false
     @State private var spinnerPhase = 0
-    @State private var isYabaiAvailable = false
 
     private let codexBlue = TerminalColors.prompt
     private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
@@ -242,12 +237,10 @@ struct InstanceRow: View {
                     }
 
                     // Go to Terminal button (only if yabai available)
-                    if isYabaiAvailable {
-                        TerminalButton(
-                            isEnabled: session.isInTmux,
-                            onTap: { onFocus() }
-                        )
-                    }
+                    TerminalButton(
+                        isEnabled: session.canFocusTerminal,
+                        onTap: { onFocus() }
+                    )
                 }
                 .transition(.opacity.combined(with: .scale(scale: 0.9)))
             } else if isWaitingForApproval {
@@ -264,8 +257,7 @@ struct InstanceRow: View {
                         onChat()
                     }
 
-                    // Focus icon (only for tmux instances with yabai)
-                    if session.isInTmux && isYabaiAvailable {
+                    if session.canFocusTerminal {
                         IconButton(icon: "eye") {
                             onFocus()
                         }
@@ -285,6 +277,11 @@ struct InstanceRow: View {
         .padding(.trailing, 14)
         .padding(.vertical, 10)
         .contentShape(Rectangle())
+        .onTapGesture {
+            if session.canFocusTerminal {
+                onFocus()
+            }
+        }
         .onTapGesture(count: 2) {
             onChat()
         }
@@ -294,9 +291,6 @@ struct InstanceRow: View {
                 .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
         )
         .onHover { isHovered = $0 }
-        .task {
-            isYabaiAvailable = await WindowFinder.shared.isYabaiAvailable()
-        }
     }
 
     @ViewBuilder

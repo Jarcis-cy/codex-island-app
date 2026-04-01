@@ -24,7 +24,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var pid: Int?
     var tty: String?
     var terminalName: String?
+    var terminalBundleId: String?
+    var terminalProcessId: Int?
     var isInTmux: Bool
+    var focusTarget: TerminalFocusTarget?
+    var focusCapability: TerminalFocusCapability
 
     // MARK: - State Machine
 
@@ -76,7 +80,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
         pid: Int? = nil,
         tty: String? = nil,
         terminalName: String? = nil,
+        terminalBundleId: String? = nil,
+        terminalProcessId: Int? = nil,
         isInTmux: Bool = false,
+        focusTarget: TerminalFocusTarget? = nil,
+        focusCapability: TerminalFocusCapability = .unresolved,
         phase: SessionPhase = .idle,
         chatItems: [ChatHistoryItem] = [],
         toolTracker: ToolTracker = ToolTracker(),
@@ -97,7 +105,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.pid = pid
         self.tty = tty
         self.terminalName = terminalName
+        self.terminalBundleId = terminalBundleId
+        self.terminalProcessId = terminalProcessId
         self.isInTmux = isInTmux
+        self.focusTarget = focusTarget
+        self.focusCapability = focusCapability
         self.phase = phase
         self.chatItems = chatItems
         self.toolTracker = toolTracker
@@ -191,6 +203,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
     /// Whether the session can be interacted with
     var canInteract: Bool {
         phase.needsAttention
+    }
+
+    var canFocusTerminal: Bool {
+        focusCapability == .ready
     }
 }
 
