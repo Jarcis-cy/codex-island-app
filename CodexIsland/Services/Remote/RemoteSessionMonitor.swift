@@ -58,6 +58,7 @@ struct RemoteAppServerConnectionDependencies: Sendable {
     let processExecutor: any ProcessExecuting
     let diagnosticsLogger: any RemoteDiagnosticsLogging
     let requestTimeout: Duration
+    let initialRefreshDelay: Duration
     let refreshInterval: Duration
     let sleep: @Sendable (Duration) async throws -> Void
 
@@ -66,11 +67,44 @@ struct RemoteAppServerConnectionDependencies: Sendable {
         processExecutor: ProcessExecutor.shared,
         diagnosticsLogger: RemoteDiagnosticsLogger.shared,
         requestTimeout: .seconds(10),
+        initialRefreshDelay: .seconds(5),
         refreshInterval: .seconds(15),
         sleep: { duration in
             try await Task.sleep(for: duration)
         }
     )
+}
+
+actor RemoteRequestSerialGate {
+    private var isHeld = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func acquire() async {
+        if !isHeld {
+            isHeld = true
+            return
+        }
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        if waiters.isEmpty {
+            isHeld = false
+            return
+        }
+
+        let continuation = waiters.removeFirst()
+        continuation.resume()
+    }
+
+    func withPermit<T>(_ operation: () async throws -> T) async rethrows -> T {
+        await acquire()
+        defer { release() }
+        return try await operation()
+    }
 }
 
 @MainActor
@@ -512,11 +546,10 @@ final class RemoteSessionMonitor: ObservableObject {
         case .approval(let hostId, let threadId, let approval):
             guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
             threads[index].pendingApproval = approval
-            let toolInput = approval.formattedInput.map { ["detail": AnyCodable($0)] }
             threads[index].phase = .waitingForApproval(PermissionContext(
                 toolUseId: approval.itemId,
                 toolName: approval.title,
-                toolInput: toolInput,
+                toolInput: nil,
                 receivedAt: Date()
             ))
             threads[index].updatedAt = Date()
@@ -830,11 +863,10 @@ final class RemoteSessionMonitor: ObservableObject {
         activeTurnId: String?
     ) -> SessionPhase {
         if let pendingApproval {
-            let toolInput = pendingApproval.formattedInput.map { ["detail": AnyCodable($0)] }
             return .waitingForApproval(PermissionContext(
                 toolUseId: pendingApproval.itemId,
                 toolName: pendingApproval.title,
-                toolInput: toolInput,
+                toolInput: nil,
                 receivedAt: Date()
             ))
         }
@@ -918,6 +950,7 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
     private var pendingRequestMetadata: [Int: PendingRequestMetadata] = [:]
     private var latestStderr: String = ""
     private var isStopping = false
+    private let requestGate = RemoteRequestSerialGate()
 
     init(
         host: RemoteHostConfig,
@@ -1110,6 +1143,12 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
     private func startRefreshLoop() {
         refreshTask?.cancel()
         refreshTask = Task {
+            do {
+                try await self.dependencies.sleep(self.dependencies.initialRefreshDelay)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
             await self.refreshThreadsInBackground(reason: "initial")
             while !Task.isCancelled {
                 do {
@@ -1416,50 +1455,52 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
     }
 
     private func request(method: String, params: [String: Any]) async throws -> AnyCodable? {
-        let id = nextRequestId
-        nextRequestId += 1
+        try await requestGate.withPermit {
+            let id = nextRequestId
+            nextRequestId += 1
 
-        let envelope = RemoteAppServerEnvelope(
-            method: method,
-            id: .int(id),
-            params: AnyCodable(params),
-            result: nil,
-            error: nil
-        )
-        let metadata = PendingRequestMetadata(
-            method: method,
-            threadId: stringValue(forKey: "threadId", in: params),
-            turnId: stringValue(forKey: "turnId", in: params) ?? stringValue(forKey: "expectedTurnId", in: params),
-            itemId: stringValue(forKey: "itemId", in: params)
-        )
+            let envelope = RemoteAppServerEnvelope(
+                method: method,
+                id: .int(id),
+                params: AnyCodable(params),
+                result: nil,
+                error: nil
+            )
+            let metadata = PendingRequestMetadata(
+                method: method,
+                threadId: stringValue(forKey: "threadId", in: params),
+                turnId: stringValue(forKey: "turnId", in: params) ?? stringValue(forKey: "expectedTurnId", in: params),
+                itemId: stringValue(forKey: "itemId", in: params)
+            )
 
-        let payload = try await sendEnvelope(envelope)
-        await log(
-            level: .debug,
-            category: "remote.rpc.request",
-            requestId: String(id),
-            method: method,
-            threadId: metadata.threadId,
-            turnId: metadata.turnId,
-            itemId: metadata.itemId,
-            message: "Sent RPC request",
-            payload: payload
-        )
+            let payload = try await sendEnvelope(envelope)
+            await log(
+                level: .debug,
+                category: "remote.rpc.request",
+                requestId: String(id),
+                method: method,
+                threadId: metadata.threadId,
+                turnId: metadata.turnId,
+                itemId: metadata.itemId,
+                message: "Sent RPC request",
+                payload: payload
+            )
 
-        return try await withCheckedThrowingContinuation { continuation in
-            pendingRequests[id] = continuation
-            pendingRequestMetadata[id] = metadata
+            return try await withCheckedThrowingContinuation { continuation in
+                pendingRequests[id] = continuation
+                pendingRequestMetadata[id] = metadata
 
-            Task {
-                do {
-                    try await self.dependencies.sleep(self.dependencies.requestTimeout)
-                } catch {
-                    return
+                Task {
+                    do {
+                        try await self.dependencies.sleep(self.dependencies.requestTimeout)
+                    } catch {
+                        return
+                    }
+                    await self.failPendingRequest(
+                        id: id,
+                        error: RemoteSessionError.timeout("Timed out waiting for app-server response to \(method)")
+                    )
                 }
-                await self.failPendingRequest(
-                    id: id,
-                    error: RemoteSessionError.timeout("Timed out waiting for app-server response to \(method)")
-                )
             }
         }
     }

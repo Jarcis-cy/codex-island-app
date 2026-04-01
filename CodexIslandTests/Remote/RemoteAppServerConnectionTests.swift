@@ -16,6 +16,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
                 processExecutor: TestProcessExecutor(),
                 diagnosticsLogger: logger,
                 requestTimeout: .milliseconds(50),
+                initialRefreshDelay: .seconds(60),
                 refreshInterval: .seconds(60),
                 sleep: { duration in
                     try await Task.sleep(for: duration)
@@ -31,7 +32,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         await connection.stop()
     }
 
-    func testConcurrentRequestsMatchResponsesByID() async throws {
+    func testQueuedThreadRequestsStillMatchResponsesByID() async throws {
         let transport = TestTransport()
         let logger = TestDiagnosticsLogger()
         let recorder = RemoteEventRecorder()
@@ -45,6 +46,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
                 processExecutor: TestProcessExecutor(),
                 diagnosticsLogger: logger,
                 requestTimeout: .seconds(1),
+                initialRefreshDelay: .seconds(60),
                 refreshInterval: .seconds(60),
                 sleep: { duration in
                     try await Task.sleep(for: duration)
@@ -59,26 +61,32 @@ final class RemoteAppServerConnectionTests: XCTestCase {
 
         try await waitUntil {
             let lines = await transport.sentLines
-            return lines.contains { (try? Self.method(in: $0)) == "thread/start" } &&
-                lines.contains { (try? Self.method(in: $0)) == "thread/resume" }
+            return lines.count == 1 && ((try? Self.method(in: lines[0])) == "thread/start")
         }
 
-        let sentLines = await transport.sentLines
-        let startLine = try XCTUnwrap(sentLines.first(where: { (try? Self.method(in: $0)) == "thread/start" }))
-        let resumeLine = try XCTUnwrap(sentLines.first(where: { (try? Self.method(in: $0)) == "thread/resume" }))
+        let initialLines = await transport.sentLines
+        let startLine = try XCTUnwrap(initialLines.first)
         let startID = try extractID(from: startLine)
-        let resumeID = try extractID(from: resumeLine)
 
-        try await transport.emitStdout(
-            makeEnvelopeJSON(
-                id: resumeID,
-                result: ["thread": threadPayload(id: "thread-existing", preview: "Existing")]
-            )
-        )
         try await transport.emitStdout(
             makeEnvelopeJSON(
                 id: startID,
                 result: ["thread": threadPayload(id: "thread-new", preview: "New")]
+            )
+        )
+
+        try await waitUntil {
+            let lines = await transport.sentLines
+            return lines.count == 2 && ((try? Self.method(in: lines[1])) == "thread/resume")
+        }
+
+        let sentLines = await transport.sentLines
+        let resumeLine = try XCTUnwrap(sentLines.last)
+        let resumeID = try extractID(from: resumeLine)
+        try await transport.emitStdout(
+            makeEnvelopeJSON(
+                id: resumeID,
+                result: ["thread": threadPayload(id: "thread-existing", preview: "Existing")]
             )
         )
 
@@ -105,6 +113,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
                 processExecutor: TestProcessExecutor(),
                 diagnosticsLogger: logger,
                 requestTimeout: .seconds(1),
+                initialRefreshDelay: .seconds(60),
                 refreshInterval: .seconds(60),
                 sleep: { duration in
                     try await Task.sleep(for: duration)
@@ -118,6 +127,71 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         XCTAssertFalse(states.contains { if case .failed = $0 { return true } else { return false } })
         let stopCount = await transport.stopCount
         XCTAssertEqual(stopCount, 1)
+    }
+
+    func testQueuedRequestsWaitForPreviousResponse() async throws {
+        let transport = TestTransport()
+        let logger = TestDiagnosticsLogger()
+        let recorder = RemoteEventRecorder()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+
+        let connection = RemoteAppServerConnection(
+            host: host,
+            emit: { event in await recorder.append(event) },
+            dependencies: RemoteAppServerConnectionDependencies(
+                transportFactory: { _ in transport },
+                processExecutor: TestProcessExecutor(),
+                diagnosticsLogger: logger,
+                requestTimeout: .seconds(1),
+                initialRefreshDelay: .seconds(60),
+                refreshInterval: .seconds(60),
+                sleep: { duration in
+                    try await Task.sleep(for: duration)
+                }
+            )
+        )
+
+        try await connection.installTransportForTesting(transport)
+
+        async let listTask: Void = {
+            try await connection.refreshThreads()
+        }()
+        async let startTask: RemoteAppServerThread = connection.startThread(defaultCwd: "/tmp")
+
+        try await waitUntil {
+            let lines = await transport.sentLines
+            return lines.count == 1
+        }
+
+        let firstSentLines = await transport.sentLines
+        let firstLine = try XCTUnwrap(firstSentLines.first)
+        XCTAssertEqual(try Self.method(in: firstLine), "thread/list")
+        try await transport.emitStdout(
+            makeEnvelopeJSON(
+                id: try extractID(from: firstLine),
+                result: ["data": [], "nextCursor": NSNull()]
+            )
+        )
+
+        try await waitUntil {
+            let lines = await transport.sentLines
+            return lines.count == 2
+        }
+
+        let secondSentLines = await transport.sentLines
+        let secondLine = try XCTUnwrap(secondSentLines.last)
+        XCTAssertEqual(try Self.method(in: secondLine), "thread/start")
+        try await transport.emitStdout(
+            makeEnvelopeJSON(
+                id: try extractID(from: secondLine),
+                result: ["thread": threadPayload(id: "thread-new", preview: "New")]
+            )
+        )
+
+        _ = try await listTask
+        let started = try await startTask
+        XCTAssertEqual(started.id, "thread-new")
+        await connection.stop()
     }
 
     private func extractID(from line: String) throws -> Int {

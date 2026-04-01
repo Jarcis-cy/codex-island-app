@@ -89,6 +89,14 @@ actor RemoteEventRecorder {
     }
 }
 
+enum TestObjectRetainer {
+    private static var retainedObjects: [AnyObject] = []
+
+    static func retain(_ object: AnyObject) {
+        retainedObjects.append(object)
+    }
+}
+
 final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked Sendable {
     var emit: (@Sendable (RemoteConnectionEvent) async -> Void)?
     var startThreadHandler: (@Sendable (String) async throws -> RemoteAppServerThread)?
