@@ -503,4 +503,46 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertEqual(callbackThread.history.first?.type, .user("hello"))
     }
 
+    func testCreateThreadDoesNotResumeFreshlyStartedEmptyThread() async throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
+        let freshThread = makeThread(id: "thread-new", preview: "New", cwd: "/repo")
+        final class ResumeTracker: @unchecked Sendable {
+            var didResume = false
+        }
+        let tracker = ResumeTracker()
+
+        connection.startThreadHandler = { _ in
+            makeThreadStartResponse(thread: freshThread)
+        }
+        connection.resumeThreadHandler = { _, _ in
+            tracker.didResume = true
+            return makeThreadResumeResponse(thread: freshThread)
+        }
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+
+        let callbackThread = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<RemoteThreadState, Error>) in
+            monitor.createThread(hostId: host.id) { thread in
+                continuation.resume(returning: thread)
+            }
+        }
+
+        XCTAssertEqual(callbackThread.threadId, "thread-new")
+        XCTAssertFalse(tracker.didResume)
+    }
+
 }

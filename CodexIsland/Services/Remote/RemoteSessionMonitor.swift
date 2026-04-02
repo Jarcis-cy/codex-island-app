@@ -290,6 +290,9 @@ final class RemoteSessionMonitor: ObservableObject {
 
         hostActionTasks[hostId] = Task.detached(priority: .userInitiated) { [weak self] in
             guard let self else { return }
+            let knownThreadIds = await MainActor.run {
+                Set(self.threads.filter { $0.hostId == hostId }.map(\.threadId))
+            }
             defer {
                 Task { @MainActor in
                     self.markStateChanged()
@@ -301,10 +304,14 @@ final class RemoteSessionMonitor: ObservableObject {
             do {
                 let thread = try await self.startThread(hostId: hostId)
                 let openedThread: RemoteThreadState
-                if thread.isLoaded && !thread.history.isEmpty {
-                    openedThread = thread
-                } else {
+                let shouldHydrateExistingThread =
+                    knownThreadIds.contains(thread.threadId) &&
+                    (!thread.isLoaded || thread.history.isEmpty)
+
+                if shouldHydrateExistingThread {
                     openedThread = try await self.openThread(hostId: hostId, threadId: thread.threadId)
+                } else {
+                    openedThread = thread
                 }
                 await onSuccess(openedThread)
             } catch {

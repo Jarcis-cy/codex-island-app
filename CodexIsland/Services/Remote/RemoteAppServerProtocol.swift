@@ -20,6 +20,12 @@ nonisolated struct RemoteAppServerErrorPayload: Codable, Error, Sendable {
     let message: String
 }
 
+extension RemoteAppServerErrorPayload: LocalizedError {
+    nonisolated var errorDescription: String? {
+        message
+    }
+}
+
 nonisolated enum RemoteAppServerThreadStatus: Codable, Equatable, Sendable {
     case notLoaded
     case idle
