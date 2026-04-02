@@ -49,7 +49,22 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertEqual(Set(sessions.map(\.logicalSessionId)).count, 2)
     }
 
-    private func makeHookEvent(sessionId: String, tty: String) -> HookEvent {
+    func testDifferentPIDsRemainSeparateWhenTTYMissing() async {
+        await SessionStore.shared.process(.hookReceived(
+            makeHookEvent(sessionId: "session-1", tty: nil, pid: 101)
+        ))
+        await SessionStore.shared.process(.hookReceived(
+            makeHookEvent(sessionId: "session-2", tty: nil, pid: 202)
+        ))
+
+        let sessions = await SessionStore.shared.allSessions()
+
+        XCTAssertEqual(sessions.count, 2)
+        XCTAssertEqual(Set(sessions.map(\.sessionId)), ["session-1", "session-2"])
+        XCTAssertEqual(Set(sessions.map(\.logicalSessionId)).count, 2)
+    }
+
+    private func makeHookEvent(sessionId: String, tty: String?, pid: Int? = nil) -> HookEvent {
         HookEvent(
             sessionId: sessionId,
             provider: .codex,
@@ -57,7 +72,7 @@ final class SessionStoreTests: XCTestCase {
             transcriptPath: nil,
             event: "SessionStart",
             status: "waiting_for_input",
-            pid: nil,
+            pid: pid,
             tty: tty,
             terminalName: "Apple_Terminal",
             terminalWindowId: nil,

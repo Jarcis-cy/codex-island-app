@@ -261,10 +261,6 @@ actor SessionStore {
             return "local|\(appId)|tty|\(tty)"
         }
 
-        if let terminalPid = session.terminalProcessId {
-            return "local|\(appId)|terminal-pid|\(terminalPid)"
-        }
-
         if let pid = session.pid {
             return "local|\(appId)|pid|\(pid)"
         }
