@@ -69,6 +69,131 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertEqual(updated.phase, .processing)
     }
 
+    func testSendMessageMergesOptimisticUserItemWhenServerUserMessageArrives() async throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        let baseThread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
+
+        connection.startThreadHandler = { _ in baseThread }
+        connection.sendMessageHandler = { _, _, _ in }
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadUpsert(hostId: host.id, thread: baseThread))
+        let thread = try XCTUnwrap(monitor.threads.first)
+
+        try await monitor.sendMessage(thread: thread, text: "hi")
+        monitor.apply(event: .itemStarted(
+            hostId: host.id,
+            threadId: "thread-1",
+            turnId: "turn-1",
+            item: .userMessage(id: "server-user-1", content: [.text("hi")])
+        ))
+
+        let updated = try XCTUnwrap(monitor.threads.first)
+        XCTAssertEqual(updated.history.count, 1)
+        XCTAssertEqual(updated.history.first?.id, "server-user-1")
+        XCTAssertEqual(updated.history.first?.type, .user("hi"))
+    }
+
+    func testSendMessageRemovesOptimisticUserItemOnFailure() async throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        let baseThread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
+
+        connection.sendMessageHandler = { _, _, _ in
+            throw RemoteSessionError.transport("boom")
+        }
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadUpsert(hostId: host.id, thread: baseThread))
+        let thread = try XCTUnwrap(monitor.threads.first)
+
+        do {
+            try await monitor.sendMessage(thread: thread, text: "hi")
+            XCTFail("Expected sendMessage to fail")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "boom")
+        }
+
+        let updated = try XCTUnwrap(monitor.threads.first)
+        XCTAssertTrue(updated.history.isEmpty)
+    }
+
+    func testTurnPlanUpdatedAddsTodoWriteHistoryItem() throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        let thread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.apply(event: .threadUpsert(hostId: host.id, thread: thread))
+        monitor.apply(event: .turnPlanUpdated(
+            hostId: host.id,
+            threadId: "thread-1",
+            turnId: "turn-1",
+            explanation: "Syncing plan",
+            plan: [
+                RemoteAppServerPlanStep(step: "Inspect remote state", status: "completed"),
+                RemoteAppServerPlanStep(step: "Patch UI", status: "in_progress")
+            ]
+        ))
+
+        let updated = try XCTUnwrap(monitor.threads.first)
+        guard case .toolCall(let tool)? = updated.history.last?.type else {
+            return XCTFail("Expected plan update tool call")
+        }
+
+        XCTAssertEqual(tool.name, "TodoWrite")
+        XCTAssertEqual(tool.result, "Syncing plan\n- [completed] Inspect remote state\n- [in_progress] Patch UI")
+        XCTAssertEqual(
+            tool.structuredResult,
+            .todoWrite(TodoWriteResult(
+                oldTodos: [],
+                newTodos: [
+                    TodoItem(content: "Inspect remote state", status: "completed", activeForm: nil),
+                    TodoItem(content: "Patch UI", status: "in_progress", activeForm: nil)
+                ]
+            ))
+        )
+    }
+
     func testApprovalEventSetsPendingApprovalState() throws {
         let logger = TestDiagnosticsLogger()
         let connection = FakeRemoteConnection()

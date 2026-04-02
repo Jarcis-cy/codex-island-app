@@ -427,6 +427,18 @@ nonisolated struct RemoteAppServerTurnCompletedNotification: Codable, Sendable {
     let turn: RemoteAppServerTurn
 }
 
+nonisolated struct RemoteAppServerPlanStep: Codable, Equatable, Sendable {
+    let step: String
+    let status: String
+}
+
+nonisolated struct RemoteAppServerTurnPlanUpdatedNotification: Codable, Sendable {
+    let threadId: String
+    let turnId: String
+    let explanation: String?
+    let plan: [RemoteAppServerPlanStep]
+}
+
 nonisolated struct RemoteAppServerItemStartedNotification: Codable, Sendable {
     let item: RemoteAppServerThreadItem
     let threadId: String

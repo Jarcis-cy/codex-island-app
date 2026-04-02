@@ -2,6 +2,39 @@ import XCTest
 @testable import Codex_Island
 
 final class RemoteAppServerProtocolTests: XCTestCase {
+    func testDecodeTurnPlanUpdatedNotification() throws {
+        let data = #"""
+        {
+          "threadId": "thread-1",
+          "turnId": "turn-1",
+          "explanation": "Syncing plan",
+          "plan": [
+            { "step": "Inspect remote state", "status": "completed" },
+            { "step": "Patch UI", "status": "in_progress" }
+          ]
+        }
+        """#.data(using: .utf8)!
+        let payload = try JSONDecoder().decode(RemoteAppServerTurnPlanUpdatedNotification.self, from: data)
+
+        XCTAssertEqual(payload.threadId, "thread-1")
+        XCTAssertEqual(payload.turnId, "turn-1")
+        XCTAssertEqual(payload.explanation, "Syncing plan")
+        XCTAssertEqual(payload.plan.count, 2)
+        XCTAssertEqual(payload.plan[1], RemoteAppServerPlanStep(step: "Patch UI", status: "in_progress"))
+    }
+
+    func testRemoteSlashSubmitActionRecognizesSupportedCommand() {
+        let action = RemoteSlashCommand.submitAction(for: " /plan ")
+
+        XCTAssertEqual(action, .presentSlashCommand(.plan))
+    }
+
+    func testRemoteSlashSubmitActionRejectsUnknownSlashCommand() {
+        let action = RemoteSlashCommand.submitAction(for: "/unknown")
+
+        XCTAssertEqual(action, .rejectSlashCommand("Unsupported remote command: /unknown"))
+    }
+
     func testDecodeActiveThreadStatus() throws {
         let data = #"{"type":"active","activeFlags":["waitingOnUserInput"]}"#.data(using: .utf8)!
         let status = try JSONDecoder().decode(RemoteAppServerThreadStatus.self, from: data)

@@ -15,6 +15,13 @@ enum RemoteConnectionEvent: Sendable {
     case threadStatusChanged(hostId: String, threadId: String, status: RemoteAppServerThreadStatus)
     case turnStarted(hostId: String, threadId: String, turn: RemoteAppServerTurn)
     case turnCompleted(hostId: String, threadId: String, turn: RemoteAppServerTurn)
+    case turnPlanUpdated(
+        hostId: String,
+        threadId: String,
+        turnId: String,
+        explanation: String?,
+        plan: [RemoteAppServerPlanStep]
+    )
     case itemStarted(hostId: String, threadId: String, turnId: String, item: RemoteAppServerThreadItem)
     case itemCompleted(hostId: String, threadId: String, turnId: String, item: RemoteAppServerThreadItem)
     case agentMessageDelta(hostId: String, threadId: String, turnId: String, itemId: String, delta: String)
@@ -121,6 +128,14 @@ actor RemoteRequestSerialGate {
 
 @MainActor
 final class RemoteSessionMonitor: ObservableObject {
+    private struct OptimisticRemoteUserMessage: Sendable {
+        let localId: String
+        let hostId: String
+        let threadId: String
+        let text: String
+        let createdAt: Date
+    }
+
     static let shared = RemoteSessionMonitor()
 
     @Published private(set) var hosts: [RemoteHostConfig]
@@ -140,6 +155,7 @@ final class RemoteSessionMonitor: ObservableObject {
     private var hostActionTasks: [String: Task<Void, Never>] = [:]
     private var hostThreadFilters: [String: String] = [:]
     private var hostThreadFilterTasks: [String: Task<Void, Never>] = [:]
+    private var optimisticUserMessages: [OptimisticRemoteUserMessage] = []
 
     init(
         initialHosts: [RemoteHostConfig]? = nil,
@@ -491,7 +507,7 @@ final class RemoteSessionMonitor: ObservableObject {
         guard let connection = connections[thread.hostId] else {
             throw RemoteSessionError.notConnected
         }
-        appendOptimisticUserMessage(thread: thread, text: text)
+        let optimisticItemId = appendOptimisticUserMessage(thread: thread, text: text)
         defer {
             refreshHost(id: thread.hostId)
         }
@@ -523,6 +539,11 @@ final class RemoteSessionMonitor: ObservableObject {
                 )
                 return
             }
+            removeOptimisticUserMessage(
+                hostId: thread.hostId,
+                threadId: thread.threadId,
+                localId: optimisticItemId
+            )
             await logMonitorEvent(
                 level: .error,
                 hostId: thread.hostId,
@@ -657,6 +678,15 @@ final class RemoteSessionMonitor: ObservableObject {
             threads[index].updatedAt = Date()
             threads[index].lastActivity = Date()
 
+        case .turnPlanUpdated(let hostId, let threadId, let turnId, let explanation, let plan):
+            guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
+            upsertPlanUpdate(
+                threadIndex: index,
+                turnId: turnId,
+                explanation: explanation,
+                plan: plan
+            )
+
         case .itemStarted(let hostId, let threadId, _, let item):
             guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
             upsertHistoryItem(item, threadIndex: index, isCompletion: false)
@@ -733,7 +763,11 @@ final class RemoteSessionMonitor: ObservableObject {
         }
 
         let survivingLogicalIds = Set(groupedThreads.keys)
+        let survivingThreadIds = Set(visibleThreads.map(\.id))
         threads.removeAll { $0.hostId == hostId && !survivingLogicalIds.contains($0.logicalSessionId) }
+        optimisticUserMessages.removeAll {
+            $0.hostId == hostId && !survivingThreadIds.contains($0.threadId)
+        }
 
         for candidates in groupedThreads.values {
             guard let latestThread = candidates.max(by: { lhs, rhs in
@@ -762,6 +796,7 @@ final class RemoteSessionMonitor: ObservableObject {
 
         if let index = threadIndex(logicalSessionId: logicalSessionId) {
             let isRebindingRawThread = threads[index].threadId != thread.id
+            let previousThreadId = threads[index].threadId
             let previousPendingApproval = isRebindingRawThread ? nil : threads[index].pendingApproval
             threads[index].preview = thread.preview
             threads[index].name = thread.name
@@ -777,9 +812,15 @@ final class RemoteSessionMonitor: ObservableObject {
                 threads[index].history = computedHistory
                 threads[index].activeTurnId = computedTurn?.id
                 threads[index].canSteerTurn = computedTurn != nil
+                optimisticUserMessages.removeAll {
+                    $0.hostId == hostId && $0.threadId == thread.id
+                }
                 if isRebindingRawThread {
                     threads[index].pendingApproval = nil
                     threads[index].pendingInteractions.removeAll()
+                    optimisticUserMessages.removeAll {
+                        $0.hostId == hostId && $0.threadId == previousThreadId
+                    }
                 }
             } else if isRebindingRawThread {
                 threads[index].history = []
@@ -787,6 +828,9 @@ final class RemoteSessionMonitor: ObservableObject {
                 threads[index].canSteerTurn = computedTurn != nil
                 threads[index].pendingApproval = nil
                 threads[index].pendingInteractions.removeAll()
+                optimisticUserMessages.removeAll {
+                    $0.hostId == hostId && $0.threadId == previousThreadId
+                }
             }
 
             updateDerivedFields(at: index)
@@ -920,6 +964,9 @@ final class RemoteSessionMonitor: ObservableObject {
 
     private func upsertHistoryItem(_ item: RemoteAppServerThreadItem, threadIndex: Int, isCompletion: Bool) {
         guard let chatItem = chatHistoryItem(from: item) else { return }
+        if case .userMessage = item {
+            mergeOptimisticUserMessageIfNeeded(item: chatItem, threadIndex: threadIndex)
+        }
         if let existing = threads[threadIndex].history.firstIndex(where: { $0.id == chatItem.id }) {
             threads[threadIndex].history[existing] = ChatHistoryItem(
                 id: chatItem.id,
@@ -958,20 +1005,45 @@ final class RemoteSessionMonitor: ObservableObject {
         updateDerivedFields(at: threadIndex)
     }
 
-    func appendOptimisticUserMessage(thread: RemoteThreadState, text: String) {
-        guard let index = threadIndex(hostId: thread.hostId, threadId: thread.threadId) else { return }
+    @discardableResult
+    func appendOptimisticUserMessage(thread: RemoteThreadState, text: String) -> String {
+        guard let index = threadIndex(hostId: thread.hostId, threadId: thread.threadId) else { return "" }
+        let localId = "optimistic-user-\(UUID().uuidString)"
         let item = ChatHistoryItem(
-            id: "optimistic-user-\(UUID().uuidString)",
+            id: localId,
             type: .user(text),
             timestamp: Date()
         )
         threads[index].history.append(item)
+        optimisticUserMessages.append(OptimisticRemoteUserMessage(
+            localId: localId,
+            hostId: thread.hostId,
+            threadId: thread.threadId,
+            text: text,
+            createdAt: item.timestamp
+        ))
         threads[index].lastActivity = Date()
         threads[index].updatedAt = Date()
         if threads[index].phase == .idle || threads[index].phase == .waitingForInput {
             threads[index].phase = .processing
         }
         updateDerivedFields(at: index)
+        return localId
+    }
+
+    func availableThreads(hostId: String, excluding threadId: String? = nil) -> [RemoteThreadState] {
+        threads
+            .filter { thread in
+                guard thread.hostId == hostId else { return false }
+                guard let excluding = threadId else { return true }
+                return thread.threadId != excluding
+            }
+            .sorted { lhs, rhs in
+                if lhs.updatedAt != rhs.updatedAt {
+                    return lhs.updatedAt > rhs.updatedAt
+                }
+                return lhs.createdAt > rhs.createdAt
+            }
     }
 
     func recoverNewThread(hostId: String, excluding existingIds: Set<String>) -> RemoteThreadState? {
@@ -1087,6 +1159,99 @@ final class RemoteSessionMonitor: ObservableObject {
         case .unsupported:
             return nil
         }
+    }
+
+    private func upsertPlanUpdate(
+        threadIndex: Int,
+        turnId: String,
+        explanation: String?,
+        plan: [RemoteAppServerPlanStep]
+    ) {
+        let itemId = "plan-update-\(turnId)"
+        let todos = plan.map { step in
+            TodoItem(
+                content: step.step,
+                status: step.status,
+                activeForm: nil
+            )
+        }
+        let summary = buildPlanSummary(explanation: explanation, plan: plan)
+        let planItem = ChatHistoryItem(
+            id: itemId,
+            type: .toolCall(ToolCallItem(
+                name: "TodoWrite",
+                input: explanation.flatMap { ["description": $0] } ?? [:],
+                status: .success,
+                result: summary,
+                structuredResult: .todoWrite(TodoWriteResult(oldTodos: [], newTodos: todos)),
+                subagentTools: []
+            )),
+            timestamp: Date()
+        )
+
+        if let existing = threads[threadIndex].history.firstIndex(where: { $0.id == itemId }) {
+            threads[threadIndex].history[existing] = ChatHistoryItem(
+                id: itemId,
+                type: planItem.type,
+                timestamp: threads[threadIndex].history[existing].timestamp
+            )
+        } else {
+            threads[threadIndex].history.append(planItem)
+        }
+
+        threads[threadIndex].lastActivity = Date()
+        threads[threadIndex].updatedAt = Date()
+        updateDerivedFields(at: threadIndex)
+    }
+
+    private func buildPlanSummary(explanation: String?, plan: [RemoteAppServerPlanStep]) -> String {
+        let lines = plan.map { step in
+            "- [\(step.status)] \(step.step)"
+        }
+        let parts = [explanation].compactMap { value -> String? in
+            guard let value, !value.isEmpty else { return nil }
+            return value
+        } + lines
+        return parts.joined(separator: "\n")
+    }
+
+    private func mergeOptimisticUserMessageIfNeeded(item: ChatHistoryItem, threadIndex: Int) {
+        guard case .user(let text) = item.type else { return }
+
+        let hostId = threads[threadIndex].hostId
+        let threadId = threads[threadIndex].threadId
+        let now = Date()
+
+        guard let optimisticMatch = optimisticUserMessages
+            .filter({ optimistic in
+                optimistic.hostId == hostId &&
+                optimistic.threadId == threadId &&
+                optimistic.text == text &&
+                now.timeIntervalSince(optimistic.createdAt) < 30
+            })
+            .sorted(by: { $0.createdAt < $1.createdAt })
+            .first else {
+            return
+        }
+
+        if let optimisticIndex = threads[threadIndex].history.firstIndex(where: { $0.id == optimisticMatch.localId }) {
+            threads[threadIndex].history[optimisticIndex] = ChatHistoryItem(
+                id: item.id,
+                type: item.type,
+                timestamp: threads[threadIndex].history[optimisticIndex].timestamp
+            )
+        }
+
+        optimisticUserMessages.removeAll { $0.localId == optimisticMatch.localId }
+    }
+
+    private func removeOptimisticUserMessage(hostId: String, threadId: String, localId: String) {
+        optimisticUserMessages.removeAll {
+            $0.localId == localId || ($0.hostId == hostId && $0.threadId == threadId && $0.localId == localId)
+        }
+        guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
+        threads[index].history.removeAll { $0.id == localId }
+        updateDerivedFields(at: index)
     }
 
     private func phase(
@@ -1556,6 +1721,15 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
             case "turn/completed":
                 let payload = try remoteDecodeValue(params, as: RemoteAppServerTurnCompletedNotification.self)
                 await emit(.turnCompleted(hostId: host.id, threadId: payload.threadId, turn: payload.turn))
+            case "turn/plan/updated":
+                let payload = try remoteDecodeValue(params, as: RemoteAppServerTurnPlanUpdatedNotification.self)
+                await emit(.turnPlanUpdated(
+                    hostId: host.id,
+                    threadId: payload.threadId,
+                    turnId: payload.turnId,
+                    explanation: payload.explanation,
+                    plan: payload.plan
+                ))
             case "item/started":
                 let payload = try remoteDecodeValue(params, as: RemoteAppServerItemStartedNotification.self)
                 await emit(.itemStarted(hostId: host.id, threadId: payload.threadId, turnId: payload.turnId, item: payload.item))
