@@ -26,9 +26,11 @@ struct NotchGeometry: Sendable {
 
     /// The opened panel rect in screen coordinates for a given size
     func openedScreenRect(for size: CGSize) -> CGRect {
-        // Match the actual rendered panel size (tuned to match visual output)
-        let width = size.width - 6
-        let height = size.height - 30
+        // Match the rendered opened panel more conservatively so the
+        // SwiftUI surface and AppKit/global hit-testing agree on the
+        // interactive region, especially for bottom menu rows.
+        let width = size.width + 62
+        let height = size.height + 36
         return CGRect(
             x: screenRect.midX - width / 2,
             y: screenRect.maxY - height,

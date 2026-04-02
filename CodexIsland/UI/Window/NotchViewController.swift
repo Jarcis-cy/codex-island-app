@@ -51,11 +51,10 @@ class NotchViewController: NSViewController {
             switch vm.status {
             case .opened:
                 let panelSize = vm.openedSize
-                // Match the rendered opened panel bounds from NotchView:
-                // horizontal padding is corner radius inset (19pt) + outer padding (12pt) on both sides,
-                // and the panel has an additional 12pt bottom padding.
+                // Keep AppKit hit testing aligned with NotchGeometry's
+                // opened panel bounds so bottom menu rows remain clickable.
                 let horizontalPadding: CGFloat = 62
-                let bottomPadding: CGFloat = 12
+                let bottomPadding: CGFloat = 36
                 let panelWidth = panelSize.width + horizontalPadding
                 let panelHeight = panelSize.height + bottomPadding
                 let screenWidth = geometry.screenRect.width
