@@ -9,7 +9,7 @@ import SwiftUI
 
 enum RemoteChatSubmitAction: Equatable {
     case send(String)
-    case presentSlashCommand(RemoteSlashCommand)
+    case command(RemoteSlashCommand, args: String?)
     case rejectSlashCommand(String)
 }
 
@@ -23,41 +23,91 @@ enum RemoteSlashCommand: String, CaseIterable, Identifiable {
 
     var title: String { rawValue }
 
+    var bareName: String {
+        String(rawValue.dropFirst())
+    }
+
     var description: String {
         switch self {
         case .plan:
-            return "进入或退出计划模式"
+            return "切到 Plan mode"
         case .model:
-            return "查看或请求切换模型"
+            return "选择模型与 reasoning"
         case .permissions:
-            return "查看或请求调整权限策略"
+            return "选择权限 preset"
         case .resume:
-            return "恢复同一远端主机上的其它线程"
+            return "恢复保存的远端线程"
         }
     }
 
-    static func exactMatch(for text: String) -> RemoteSlashCommand? {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return allCases.first(where: { $0.rawValue == trimmed })
+    var supportsInlineArgs: Bool {
+        self == .plan
     }
 
     static func matches(for text: String) -> [RemoteSlashCommand] {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard trimmed.hasPrefix("/") else { return [] }
-        return allCases.filter { $0.rawValue.hasPrefix(trimmed.lowercased()) }
+        let token = String(trimmed.dropFirst()).split(whereSeparator: \.isWhitespace).first.map(String.init) ?? ""
+        if token.isEmpty {
+            return allCases
+        }
+        return allCases.filter { $0.bareName.hasPrefix(token.lowercased()) }
     }
 
     static func submitAction(for text: String) -> RemoteChatSubmitAction? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        if let command = exactMatch(for: trimmed) {
-            return .presentSlashCommand(command)
-        }
         if trimmed.hasPrefix("/") {
+            let commandBody = String(trimmed.dropFirst())
+            let parts = commandBody.split(maxSplits: 1, whereSeparator: \.isWhitespace)
+            guard let first = parts.first else { return nil }
+            let name = String(first)
+            let args = parts.count > 1 ? String(parts[1]).trimmingCharacters(in: .whitespacesAndNewlines) : nil
+            if let command = allCases.first(where: { $0.bareName == name }) {
+                return .command(command, args: args?.isEmpty == true ? nil : args)
+            }
             return .rejectSlashCommand("Unsupported remote command: \(trimmed)")
         }
         return .send(trimmed)
     }
+}
+
+private enum RemoteSlashPanel: Equatable {
+    case model
+    case permissions
+    case resume
+}
+
+private struct RemoteApprovalPreset: Identifiable, Equatable {
+    let id: String
+    let label: String
+    let description: String
+    let approvalPolicy: RemoteAppServerApprovalPolicy
+    let sandboxPolicy: RemoteAppServerSandboxPolicy
+
+    static let builtIn: [RemoteApprovalPreset] = [
+        RemoteApprovalPreset(
+            id: "read-only",
+            label: "Read Only",
+            description: "Codex can read files in the current workspace. Approval is required to edit files or access the internet.",
+            approvalPolicy: .onRequest,
+            sandboxPolicy: .readOnly()
+        ),
+        RemoteApprovalPreset(
+            id: "auto",
+            label: "Default",
+            description: "Codex can read and edit files in the current workspace, and run commands. Approval is required to access the internet or edit other files.",
+            approvalPolicy: .onRequest,
+            sandboxPolicy: .workspaceWrite()
+        ),
+        RemoteApprovalPreset(
+            id: "full-access",
+            label: "Full Access",
+            description: "Codex can edit files outside this workspace and access the internet without asking for approval.",
+            approvalPolicy: .never,
+            sandboxPolicy: .dangerFullAccess
+        )
+    ]
 }
 
 struct RemoteChatView: View {
@@ -71,10 +121,13 @@ struct RemoteChatView: View {
     @State private var isAutoscrollPaused = false
     @State private var newMessageCount = 0
     @State private var previousHistoryCount = 0
-    @State private var activeSlashCommand: RemoteSlashCommand?
+    @State private var activeSlashPanel: RemoteSlashPanel?
     @State private var slashFeedbackMessage: String?
-    @State private var customModelName: String = ""
+    @State private var isSlashPanelLoading = false
     @State private var isExecutingSlashAction = false
+    @State private var availableModels: [RemoteAppServerModel] = []
+    @State private var selectedModelForEffort: RemoteAppServerModel?
+    @State private var resumeCandidates: [RemoteThreadState] = []
     @FocusState private var isInputFocused: Bool
 
     init(
@@ -97,12 +150,8 @@ struct RemoteChatView: View {
     }
 
     private var matchingSlashCommands: [RemoteSlashCommand] {
-        guard activeSlashCommand == nil else { return [] }
+        guard activeSlashPanel == nil else { return [] }
         return RemoteSlashCommand.matches(for: inputText)
-    }
-
-    private var availableResumeThreads: [RemoteThreadState] {
-        remoteSessionMonitor.availableThreads(hostId: thread.hostId, excluding: thread.threadId)
     }
 
     var body: some View {
@@ -172,7 +221,7 @@ struct RemoteChatView: View {
             }
         }
         .onChange(of: inputText) { _, newValue in
-            if activeSlashCommand == nil,
+            if activeSlashPanel == nil,
                !newValue.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("/") {
                 slashFeedbackMessage = nil
             }
@@ -281,8 +330,8 @@ struct RemoteChatView: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
-            if let activeSlashCommand {
-                slashActionPanel(for: activeSlashCommand)
+            if let activeSlashPanel {
+                slashPanel(activeSlashPanel)
             } else if !matchingSlashCommands.isEmpty {
                 slashSuggestionsPanel
             }
@@ -350,7 +399,7 @@ struct RemoteChatView: View {
 
             ForEach(matchingSlashCommands) { command in
                 Button {
-                    presentSlashCommand(command)
+                    handleSlashCommand(command, args: nil)
                 } label: {
                     HStack(spacing: 10) {
                         Text(command.title)
@@ -396,18 +445,19 @@ struct RemoteChatView: View {
         .padding(.horizontal, 16)
     }
 
-    private func slashActionPanel(for command: RemoteSlashCommand) -> some View {
+    @ViewBuilder
+    private func slashPanel(_ panel: RemoteSlashPanel) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text(command.title)
+                Text(title(for: panel))
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .foregroundColor(.white.opacity(0.92))
-                Text(command.description)
+                Text(subtitle(for: panel))
                     .font(.system(size: 11))
                     .foregroundColor(.white.opacity(0.45))
                 Spacer()
                 Button {
-                    dismissSlashCommand()
+                    dismissSlashPanel()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .semibold))
@@ -416,132 +466,227 @@ struct RemoteChatView: View {
                 .buttonStyle(.plain)
             }
 
-            switch command {
-            case .plan:
-                slashActionButton("进入计划模式", note: "发送语义化请求到远端 Codex") {
-                    await sendSlashPrompt(
-                        "请进入计划模式，并先用简短中文说明你已经进入计划模式。后续回答保持计划模式。"
-                    )
-                }
-                slashActionButton("退出计划模式", note: "让远端 Codex 自行退出 plan mode") {
-                    await sendSlashPrompt(
-                        "请退出计划模式，并用简短中文确认已经退出计划模式。"
-                    )
-                }
-                slashActionButton("说明当前计划模式", note: "仅查询当前状态") {
-                    await sendSlashPrompt(
-                        "请说明当前线程是否处于计划模式；如果不是，也请直接说明。"
-                    )
-                }
-
-            case .model:
-                slashActionButton("查看当前模型", note: "查询当前 thread 正在使用的模型") {
-                    await sendSlashPrompt(
-                        "请告诉我当前这个远端会话正在使用的模型和 provider，并说明当前是否支持切换模型。"
-                    )
-                }
-                slashActionButton("请求切换到 gpt-5.4", note: "不会伪装成底层 RPC 已成功") {
-                    await sendSlashPrompt(
-                        "如果当前环境支持，请切换到 gpt-5.4；如果不支持，请明确说明原因和可用替代项。"
-                    )
-                }
-                slashActionButton("请求切换到 gpt-5.3-codex", note: "由远端 Codex 决定是否支持") {
-                    await sendSlashPrompt(
-                        "如果当前环境支持，请切换到 gpt-5.3-codex；如果不支持，请明确说明原因和可用替代项。"
-                    )
-                }
+            if isSlashPanelLoading {
                 HStack(spacing: 8) {
-                    TextField("Custom model name", text: $customModelName)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.white.opacity(0.05))
-                        )
-
-                    Button("请求切换") {
-                        let modelName = customModelName.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !modelName.isEmpty else { return }
-                        Task {
-                            await sendSlashPrompt(
-                                "如果当前环境支持，请切换到模型 `\(modelName)`；如果不支持，请说明原因和可用替代项。"
-                            )
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .background(Color.white.opacity(customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.2 : 0.9))
-                    .clipShape(Capsule())
-                    .disabled(customModelName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isExecutingSlashAction)
-                }
-
-            case .permissions:
-                slashActionButton("查看当前权限", note: "查询 approval policy / sandbox / permissions") {
-                    await sendSlashPrompt(
-                        "请说明当前这个远端会话的 permissions、approval policy 和 sandbox 配置。"
-                    )
-                }
-                slashActionButton("请求 workspace-write", note: "如果不能直接调整，就要求远端说明如何操作") {
-                    await sendSlashPrompt(
-                        "如果当前环境支持，请把当前会话调整为 workspace-write 级别并保留网络限制；如果不能直接调整，请说明需要我怎么操作。"
-                    )
-                }
-                slashActionButton("请求 full access", note: "如果不能直接调整，就要求远端说明如何操作") {
-                    await sendSlashPrompt(
-                        "如果当前环境支持，请把当前会话调整为 full access；如果不能直接调整，请说明需要我怎么操作。"
-                    )
-                }
-
-            case .resume:
-                if availableResumeThreads.isEmpty {
-                    Text("No other remote threads available on this host")
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("Loading…")
                         .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.45))
-                        .padding(.vertical, 4)
-                } else {
-                    ForEach(availableResumeThreads) { candidate in
-                        Button {
-                            Task {
-                                await resumeRemoteThread(candidate)
-                            }
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                HStack(spacing: 8) {
-                                    Text(candidate.displayTitle)
-                                        .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(.white.opacity(0.88))
-                                        .lineLimit(1)
-                                    Spacer()
-                                    Text(candidate.updatedAt.formatted(date: .omitted, time: .shortened))
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(.white.opacity(0.35))
-                                }
-                                Text(candidate.sourceDetail)
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.white.opacity(0.4))
-                                    .lineLimit(1)
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.white.opacity(0.05))
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(isExecutingSlashAction)
-                    }
+                        .foregroundColor(.white.opacity(0.55))
+                }
+                .padding(.vertical, 8)
+            } else {
+                switch panel {
+                case .model:
+                    modelPanelContent
+                case .permissions:
+                    permissionsPanelContent
+                case .resume:
+                    resumePanelContent
                 }
             }
         }
         .padding(.horizontal, 16)
         .padding(.top, 12)
+    }
+
+    private var modelPanelContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if let selectedModelForEffort {
+                Text("Choose reasoning effort for \(selectedModelForEffort.displayName)")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.45))
+
+                ForEach(selectedModelForEffort.supportedReasoningEfforts, id: \.reasoningEffort) { option in
+                    slashActionButton(
+                        option.reasoningEffort.rawValue,
+                        note: option.description
+                    ) {
+                        await applyModelSelection(
+                            model: selectedModelForEffort,
+                            effort: option.reasoningEffort
+                        )
+                    }
+                }
+
+                slashActionButton("Use default", note: selectedModelForEffort.defaultReasoningEffort.rawValue) {
+                    await applyModelSelection(
+                        model: selectedModelForEffort,
+                        effort: selectedModelForEffort.defaultReasoningEffort
+                    )
+                }
+
+                Button("Back") {
+                    self.selectedModelForEffort = nil
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.55))
+                .padding(.top, 4)
+            } else if availableModels.isEmpty {
+                Text("No models available")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.45))
+            } else {
+                ForEach(availableModels, id: \.id) { model in
+                    let isCurrent = model.model == (thread.currentModel ?? thread.turnContext.model)
+                    Button {
+                        if model.supportedReasoningEfforts.count <= 1 {
+                            Task {
+                                await applyModelSelection(
+                                    model: model,
+                                    effort: model.defaultReasoningEffort
+                                )
+                            }
+                        } else {
+                            selectedModelForEffort = model
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(model.displayName)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.88))
+                                if isCurrent {
+                                    Text("Current")
+                                        .font(.system(size: 10, weight: .semibold))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(Color.white.opacity(0.85))
+                                        .clipShape(Capsule())
+                                }
+                                Spacer()
+                                Text(model.defaultReasoningEffort.rawValue)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.35))
+                            }
+                            Text(model.description)
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.4))
+                                .lineLimit(2)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isExecutingSlashAction)
+                }
+            }
+        }
+    }
+
+    private var permissionsPanelContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(RemoteApprovalPreset.builtIn) { preset in
+                let isCurrent = thread.turnContext.approvalPolicy == preset.approvalPolicy &&
+                    thread.turnContext.sandboxPolicy == preset.sandboxPolicy
+                Button {
+                    Task {
+                        await applyPermissionPreset(preset)
+                    }
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text(preset.label)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white.opacity(0.88))
+                            if isCurrent {
+                                Text("Current")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.white.opacity(0.85))
+                                    .clipShape(Capsule())
+                            }
+                            Spacer()
+                        }
+                        Text(preset.description)
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.4))
+                            .lineLimit(3)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(Color.white.opacity(0.05))
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isExecutingSlashAction)
+            }
+        }
+    }
+
+    private var resumePanelContent: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if resumeCandidates.isEmpty {
+                Text("No other remote threads available on this host")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.45))
+            } else {
+                ForEach(resumeCandidates) { candidate in
+                    Button {
+                        Task {
+                            await resumeRemoteThread(candidate)
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                Text(candidate.displayTitle)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white.opacity(0.88))
+                                    .lineLimit(1)
+                                Spacer()
+                                Text(candidate.updatedAt.formatted(date: .omitted, time: .shortened))
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundColor(.white.opacity(0.35))
+                            }
+                            Text(candidate.sourceDetail)
+                                .font(.system(size: 10))
+                                .foregroundColor(.white.opacity(0.4))
+                                .lineLimit(1)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 9)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isExecutingSlashAction)
+                }
+            }
+        }
+    }
+
+    private func title(for panel: RemoteSlashPanel) -> String {
+        switch panel {
+        case .model:
+            return "/model"
+        case .permissions:
+            return "/permissions"
+        case .resume:
+            return "/resume"
+        }
+    }
+
+    private func subtitle(for panel: RemoteSlashPanel) -> String {
+        switch panel {
+        case .model:
+            return "Choose what model and reasoning effort to use."
+        case .permissions:
+            return "Choose what Codex is allowed to do."
+        case .resume:
+            return "Resume a saved chat."
+        }
     }
 
     private func slashActionButton(
@@ -600,60 +745,265 @@ struct RemoteChatView: View {
 
         switch action {
         case .send(let text):
-            inputText = ""
-            slashFeedbackMessage = nil
-            resumeAutoscroll()
-            shouldScrollToBottom = true
+            submitPlainText(text)
 
-            Task {
-                try? await remoteSessionMonitor.sendMessage(thread: thread, text: text)
-            }
-
-        case .presentSlashCommand(let command):
-            presentSlashCommand(command)
+        case .command(let command, let args):
+            handleSlashCommand(command, args: args)
 
         case .rejectSlashCommand(let message):
             slashFeedbackMessage = message
         }
     }
 
-    private func presentSlashCommand(_ command: RemoteSlashCommand) {
-        activeSlashCommand = command
-        slashFeedbackMessage = command == .resume
-            ? "Selecting a thread here resumes it locally instead of sending `/resume` into the current conversation."
-            : "This command opens a local interaction first and then sends a semantic request to remote Codex."
-        inputText = ""
-        customModelName = ""
-        resumeAutoscroll()
-    }
-
-    private func dismissSlashCommand() {
-        activeSlashCommand = nil
-        customModelName = ""
-    }
-
-    private func sendSlashPrompt(_ prompt: String) async {
-        isExecutingSlashAction = true
-        defer {
-            isExecutingSlashAction = false
+    private func handleSlashCommand(_ command: RemoteSlashCommand, args: String?) {
+        guard thread.canStartTurn else {
+            slashFeedbackMessage = "'/\(command.bareName)' is disabled while a task is in progress."
+            return
         }
+
+        if args != nil && !command.supportsInlineArgs {
+            slashFeedbackMessage = "Usage: \(command.rawValue)"
+            return
+        }
+
+        inputText = ""
+        resumeAutoscroll()
+        slashFeedbackMessage = nil
+
+        switch command {
+        case .plan:
+            Task {
+                await activatePlanMode(andSubmit: args)
+            }
+        case .model:
+            activeSlashPanel = .model
+            selectedModelForEffort = nil
+            Task {
+                await loadModels()
+            }
+        case .permissions:
+            activeSlashPanel = .permissions
+        case .resume:
+            activeSlashPanel = .resume
+            Task {
+                await loadResumeCandidates()
+            }
+        }
+    }
+
+    private func dismissSlashPanel() {
+        activeSlashPanel = nil
+        selectedModelForEffort = nil
+        isSlashPanelLoading = false
+    }
+
+    private func submitPlainText(_ text: String) {
+        inputText = ""
+        slashFeedbackMessage = nil
         resumeAutoscroll()
         shouldScrollToBottom = true
 
+        Task {
+            try? await remoteSessionMonitor.sendMessage(thread: thread, text: text)
+        }
+    }
+
+    private func loadModels() async {
+        await MainActor.run {
+            isSlashPanelLoading = true
+            availableModels = []
+            selectedModelForEffort = nil
+        }
         do {
-            try await remoteSessionMonitor.sendMessage(thread: thread, text: prompt)
-            activeSlashCommand = nil
-            slashFeedbackMessage = nil
-            customModelName = ""
+            let models = try await remoteSessionMonitor.listModels(hostId: thread.hostId)
+            await MainActor.run {
+                availableModels = models.filter { !$0.hidden }
+                isSlashPanelLoading = false
+            }
         } catch {
-            slashFeedbackMessage = error.localizedDescription
+            await MainActor.run {
+                isSlashPanelLoading = false
+                activeSlashPanel = nil
+                slashFeedbackMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func loadResumeCandidates() async {
+        await MainActor.run {
+            isSlashPanelLoading = true
+            resumeCandidates = []
+        }
+        do {
+            try await remoteSessionMonitor.refreshHostNow(id: thread.hostId)
+            let candidates = remoteSessionMonitor.availableThreads(
+                hostId: thread.hostId,
+                excluding: thread.threadId
+            )
+            await MainActor.run {
+                resumeCandidates = candidates
+                isSlashPanelLoading = false
+            }
+        } catch {
+            await MainActor.run {
+                isSlashPanelLoading = false
+                activeSlashPanel = nil
+                slashFeedbackMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func activatePlanMode(andSubmit args: String?) async {
+        await MainActor.run {
+            isExecutingSlashAction = true
+        }
+        defer {
+            Task { @MainActor in
+                isExecutingSlashAction = false
+            }
+        }
+
+        do {
+            let modes = try await remoteSessionMonitor.listCollaborationModes(hostId: thread.hostId)
+            let planMask = modes.first(where: { $0.mode == .plan })
+            let currentContext = thread.turnContext
+            let planModel = planMask?.model ?? currentContext.effectiveModel ?? currentContext.model
+            let planEffort = planMask?.reasoningEffort ?? currentContext.effectiveReasoningEffort ?? currentContext.reasoningEffort
+
+            guard let planModel else {
+                await MainActor.run {
+                    slashFeedbackMessage = "Plan mode is unavailable right now."
+                }
+                return
+            }
+
+            var updatedContext = currentContext
+            updatedContext.model = planModel
+            updatedContext.reasoningEffort = planEffort
+            updatedContext.collaborationMode = RemoteAppServerCollaborationMode(
+                mode: .plan,
+                settings: RemoteAppServerCollaborationSettings(
+                    developerInstructions: nil,
+                    model: planModel,
+                    reasoningEffort: planEffort
+                )
+            )
+
+            let updatedThread = try await remoteSessionMonitor.setTurnContext(
+                thread: thread,
+                turnContext: updatedContext,
+                synchronizeThread: false
+            )
+
+            await MainActor.run {
+                thread = updatedThread
+                slashFeedbackMessage = args == nil
+                    ? "Plan mode enabled for the next turn."
+                    : nil
+            }
+
+            if let args, !args.isEmpty {
+                try await remoteSessionMonitor.sendMessage(thread: updatedThread, text: args)
+            }
+        } catch {
+            await MainActor.run {
+                slashFeedbackMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func applyModelSelection(
+        model: RemoteAppServerModel,
+        effort: RemoteAppServerReasoningEffort
+    ) async {
+        await MainActor.run {
+            isExecutingSlashAction = true
+        }
+        defer {
+            Task { @MainActor in
+                isExecutingSlashAction = false
+            }
+        }
+
+        do {
+            var updatedContext = thread.turnContext
+            updatedContext.model = model.model
+            updatedContext.reasoningEffort = effort
+            if let collaborationMode = updatedContext.collaborationMode {
+                updatedContext.collaborationMode = RemoteAppServerCollaborationMode(
+                    mode: collaborationMode.mode,
+                    settings: RemoteAppServerCollaborationSettings(
+                        developerInstructions: collaborationMode.settings.developerInstructions,
+                        model: model.model,
+                        reasoningEffort: effort
+                    )
+                )
+            }
+
+            let updatedThread = try await remoteSessionMonitor.setTurnContext(
+                thread: thread,
+                turnContext: updatedContext,
+                synchronizeThread: true
+            )
+
+            await MainActor.run {
+                thread = updatedThread
+                dismissSlashPanel()
+                slashFeedbackMessage = nil
+            }
+        } catch {
+            await MainActor.run {
+                slashFeedbackMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func applyPermissionPreset(_ preset: RemoteApprovalPreset) async {
+        await MainActor.run {
+            isExecutingSlashAction = true
+        }
+        defer {
+            Task { @MainActor in
+                isExecutingSlashAction = false
+            }
+        }
+
+        do {
+            var updatedContext = thread.turnContext
+            updatedContext.approvalPolicy = preset.approvalPolicy
+            updatedContext.approvalsReviewer = .user
+            updatedContext.sandboxPolicy = preset.sandboxPolicy
+
+            let updatedThread = try await remoteSessionMonitor.setTurnContext(
+                thread: thread,
+                turnContext: updatedContext,
+                synchronizeThread: true
+            )
+            remoteSessionMonitor.appendLocalInfoMessage(
+                thread: updatedThread,
+                message: "Permissions updated to \(preset.label)"
+            )
+
+            await MainActor.run {
+                thread = updatedThread
+                dismissSlashPanel()
+                slashFeedbackMessage = nil
+            }
+        } catch {
+            await MainActor.run {
+                slashFeedbackMessage = error.localizedDescription
+            }
         }
     }
 
     private func resumeRemoteThread(_ candidate: RemoteThreadState) async {
-        isExecutingSlashAction = true
+        await MainActor.run {
+            isExecutingSlashAction = true
+        }
         defer {
-            isExecutingSlashAction = false
+            Task { @MainActor in
+                isExecutingSlashAction = false
+            }
         }
 
         do {
@@ -662,9 +1012,8 @@ struct RemoteChatView: View {
                 threadId: candidate.threadId
             )
             await MainActor.run {
-                activeSlashCommand = nil
+                activeSlashPanel = nil
                 slashFeedbackMessage = nil
-                customModelName = ""
                 viewModel.showRemoteChat(for: opened)
             }
         } catch {

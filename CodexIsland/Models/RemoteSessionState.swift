@@ -61,6 +61,34 @@ nonisolated struct RemotePendingApproval: Identifiable, Equatable, Sendable {
     }
 }
 
+nonisolated struct RemoteThreadTurnContext: Equatable, Sendable {
+    var model: String?
+    var reasoningEffort: RemoteAppServerReasoningEffort?
+    var approvalPolicy: RemoteAppServerApprovalPolicy?
+    var approvalsReviewer: RemoteAppServerApprovalsReviewer?
+    var sandboxPolicy: RemoteAppServerSandboxPolicy?
+    var serviceTier: RemoteAppServerServiceTier?
+    var collaborationMode: RemoteAppServerCollaborationMode?
+
+    static let empty = RemoteThreadTurnContext(
+        model: nil,
+        reasoningEffort: nil,
+        approvalPolicy: nil,
+        approvalsReviewer: nil,
+        sandboxPolicy: nil,
+        serviceTier: nil,
+        collaborationMode: nil
+    )
+
+    var effectiveModel: String? {
+        collaborationMode?.settings.model ?? model
+    }
+
+    var effectiveReasoningEffort: RemoteAppServerReasoningEffort? {
+        collaborationMode?.settings.reasoningEffort ?? reasoningEffort
+    }
+}
+
 nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
     let hostId: String
     let hostName: String
@@ -85,6 +113,7 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
     var pendingApproval: RemotePendingApproval?
     var pendingInteractions: [PendingInteraction]
     var connectionState: RemoteHostConnectionState
+    var turnContext: RemoteThreadTurnContext
 
     var id: String { stableId }
 
@@ -114,6 +143,14 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
         let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedCwd.isEmpty else { return sourceLabel }
         return "\(sourceLabel) • \(trimmedCwd)"
+    }
+
+    var currentModel: String? {
+        turnContext.effectiveModel
+    }
+
+    var currentReasoningEffort: RemoteAppServerReasoningEffort? {
+        turnContext.effectiveReasoningEffort
     }
 
     var canStartTurn: Bool {

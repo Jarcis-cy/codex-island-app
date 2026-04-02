@@ -81,12 +81,26 @@ nonisolated struct RemoteAppServerThreadReadResponse: Codable, Sendable {
 
 nonisolated struct RemoteAppServerThreadResumeResponse: Codable, Sendable {
     let thread: RemoteAppServerThread
+    let model: String
+    let modelProvider: String
+    let serviceTier: RemoteAppServerServiceTier?
+    let cwd: String
+    let approvalPolicy: RemoteAppServerApprovalPolicy
+    let approvalsReviewer: RemoteAppServerApprovalsReviewer
+    let sandbox: RemoteAppServerSandboxPolicy
+    let reasoningEffort: RemoteAppServerReasoningEffort?
 }
 
 nonisolated struct RemoteAppServerThreadStartResponse: Codable, Sendable {
     let thread: RemoteAppServerThread
-    let model: String?
-    let modelProvider: String?
+    let model: String
+    let modelProvider: String
+    let serviceTier: RemoteAppServerServiceTier?
+    let cwd: String
+    let approvalPolicy: RemoteAppServerApprovalPolicy
+    let approvalsReviewer: RemoteAppServerApprovalsReviewer
+    let sandbox: RemoteAppServerSandboxPolicy
+    let reasoningEffort: RemoteAppServerReasoningEffort?
 }
 
 nonisolated struct RemoteAppServerTurnStartResponse: Codable, Sendable {
@@ -95,6 +109,329 @@ nonisolated struct RemoteAppServerTurnStartResponse: Codable, Sendable {
 
 nonisolated struct RemoteAppServerTurnSteerResponse: Codable, Sendable {
     let turnId: String
+}
+
+nonisolated enum RemoteAppServerApprovalsReviewer: String, Codable, Equatable, Sendable {
+    case user
+    case guardianSubagent = "guardian_subagent"
+}
+
+nonisolated enum RemoteAppServerServiceTier: String, Codable, Equatable, Sendable {
+    case fast
+    case flex
+}
+
+nonisolated enum RemoteAppServerReasoningEffort: String, Codable, Equatable, Sendable {
+    case none
+    case minimal
+    case low
+    case medium
+    case high
+    case xhigh
+}
+
+nonisolated struct RemoteAppServerReasoningEffortOption: Codable, Equatable, Sendable {
+    let reasoningEffort: RemoteAppServerReasoningEffort
+    let description: String
+}
+
+nonisolated enum RemoteAppServerApprovalPolicy: Codable, Equatable, Sendable {
+    case untrusted
+    case onFailure
+    case onRequest
+    case never
+    case granular
+    case unsupported(String)
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        if let rawValue = try? container.decode(String.self) {
+            switch rawValue {
+            case "untrusted":
+                self = .untrusted
+            case "on-failure":
+                self = .onFailure
+            case "on-request":
+                self = .onRequest
+            case "never":
+                self = .never
+            default:
+                self = .unsupported(rawValue)
+            }
+            return
+        }
+
+        if let granular = try? container.decode([String: AnyCodable].self),
+           granular["granular"] != nil {
+            self = .granular
+            return
+        }
+
+        self = .unsupported("unsupported")
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .untrusted:
+            try container.encode("untrusted")
+        case .onFailure:
+            try container.encode("on-failure")
+        case .onRequest:
+            try container.encode("on-request")
+        case .never:
+            try container.encode("never")
+        case .granular:
+            let granular: [String: [String: Bool]] = ["granular": [:]]
+            try container.encode(granular)
+        case .unsupported(let rawValue):
+            try container.encode(rawValue)
+        }
+    }
+}
+
+nonisolated enum RemoteAppServerSandboxMode: String, Codable, Equatable, Sendable {
+    case readOnly = "read-only"
+    case workspaceWrite = "workspace-write"
+    case dangerFullAccess = "danger-full-access"
+    case externalSandbox = "external-sandbox"
+}
+
+nonisolated struct RemoteAppServerSandboxPolicy: Codable, Equatable, Sendable {
+    let mode: RemoteAppServerSandboxMode
+    let networkAccessEnabled: Bool?
+    let writableRoots: [String]
+    let excludeTmpdirEnvVar: Bool
+    let excludeSlashTmp: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+        case networkAccess
+        case writableRoots
+        case excludeTmpdirEnvVar
+        case excludeSlashTmp
+    }
+
+    init(
+        mode: RemoteAppServerSandboxMode,
+        networkAccessEnabled: Bool? = nil,
+        writableRoots: [String] = [],
+        excludeTmpdirEnvVar: Bool = false,
+        excludeSlashTmp: Bool = false
+    ) {
+        self.mode = mode
+        self.networkAccessEnabled = networkAccessEnabled
+        self.writableRoots = writableRoots
+        self.excludeTmpdirEnvVar = excludeTmpdirEnvVar
+        self.excludeSlashTmp = excludeSlashTmp
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try container.decode(String.self, forKey: .type)
+
+        switch type {
+        case "dangerFullAccess":
+            self = .dangerFullAccess
+        case "readOnly":
+            self = .readOnly(
+                networkAccessEnabled: try container.decodeIfPresent(Bool.self, forKey: .networkAccess) ?? false
+            )
+        case "workspaceWrite":
+            self = .workspaceWrite(
+                networkAccessEnabled: try container.decodeIfPresent(Bool.self, forKey: .networkAccess) ?? false,
+                writableRoots: try container.decodeIfPresent([String].self, forKey: .writableRoots) ?? [],
+                excludeTmpdirEnvVar: try container.decodeIfPresent(Bool.self, forKey: .excludeTmpdirEnvVar) ?? false,
+                excludeSlashTmp: try container.decodeIfPresent(Bool.self, forKey: .excludeSlashTmp) ?? false
+            )
+        case "externalSandbox":
+            self = .externalSandbox
+        default:
+            self = .readOnly(networkAccessEnabled: false)
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+
+        switch mode {
+        case .dangerFullAccess:
+            try container.encode("dangerFullAccess", forKey: .type)
+        case .readOnly:
+            try container.encode("readOnly", forKey: .type)
+            try container.encode(networkAccessEnabled ?? false, forKey: .networkAccess)
+        case .workspaceWrite:
+            try container.encode("workspaceWrite", forKey: .type)
+            try container.encode(networkAccessEnabled ?? false, forKey: .networkAccess)
+            try container.encode(writableRoots, forKey: .writableRoots)
+            try container.encode(excludeTmpdirEnvVar, forKey: .excludeTmpdirEnvVar)
+            try container.encode(excludeSlashTmp, forKey: .excludeSlashTmp)
+        case .externalSandbox:
+            try container.encode("externalSandbox", forKey: .type)
+        }
+    }
+
+    static var dangerFullAccess: RemoteAppServerSandboxPolicy {
+        RemoteAppServerSandboxPolicy(mode: .dangerFullAccess)
+    }
+
+    static func readOnly(networkAccessEnabled: Bool = false) -> RemoteAppServerSandboxPolicy {
+        RemoteAppServerSandboxPolicy(
+            mode: .readOnly,
+            networkAccessEnabled: networkAccessEnabled
+        )
+    }
+
+    static func workspaceWrite(
+        networkAccessEnabled: Bool = false,
+        writableRoots: [String] = [],
+        excludeTmpdirEnvVar: Bool = false,
+        excludeSlashTmp: Bool = false
+    ) -> RemoteAppServerSandboxPolicy {
+        RemoteAppServerSandboxPolicy(
+            mode: .workspaceWrite,
+            networkAccessEnabled: networkAccessEnabled,
+            writableRoots: writableRoots,
+            excludeTmpdirEnvVar: excludeTmpdirEnvVar,
+            excludeSlashTmp: excludeSlashTmp
+        )
+    }
+
+    static var externalSandbox: RemoteAppServerSandboxPolicy {
+        RemoteAppServerSandboxPolicy(mode: .externalSandbox)
+    }
+
+    var sandboxMode: RemoteAppServerSandboxMode {
+        mode
+    }
+}
+
+nonisolated enum RemoteAppServerModeKind: String, Codable, Equatable, Sendable {
+    case plan
+    case `default`
+}
+
+nonisolated struct RemoteAppServerCollaborationSettings: Codable, Equatable, Sendable {
+    let developerInstructions: String?
+    let model: String
+    let reasoningEffort: RemoteAppServerReasoningEffort?
+}
+
+nonisolated struct RemoteAppServerCollaborationMode: Codable, Equatable, Sendable {
+    let mode: RemoteAppServerModeKind
+    let settings: RemoteAppServerCollaborationSettings
+}
+
+nonisolated struct RemoteAppServerCollaborationModeMask: Codable, Equatable, Sendable {
+    let name: String
+    let mode: RemoteAppServerModeKind?
+    let model: String?
+    let reasoningEffort: RemoteAppServerReasoningEffort?
+
+    private enum CodingKeys: String, CodingKey {
+        case name
+        case mode
+        case model
+        case reasoningEffort = "reasoning_effort"
+    }
+}
+
+nonisolated struct RemoteAppServerCollaborationModeListResponse: Codable, Sendable {
+    let data: [RemoteAppServerCollaborationModeMask]
+}
+
+nonisolated struct RemoteAppServerModel: Codable, Equatable, Sendable {
+    let id: String
+    let model: String
+    let displayName: String
+    let description: String
+    let hidden: Bool
+    let supportedReasoningEfforts: [RemoteAppServerReasoningEffortOption]
+    let defaultReasoningEffort: RemoteAppServerReasoningEffort
+    let isDefault: Bool
+}
+
+nonisolated struct RemoteAppServerModelListResponse: Codable, Sendable {
+    let data: [RemoteAppServerModel]
+    let nextCursor: String?
+}
+
+extension RemoteAppServerApprovalPolicy {
+    nonisolated var requestValue: String? {
+        switch self {
+        case .untrusted:
+            return "untrusted"
+        case .onFailure:
+            return "on-failure"
+        case .onRequest:
+            return "on-request"
+        case .never:
+            return "never"
+        case .granular, .unsupported:
+            return nil
+        }
+    }
+}
+
+extension RemoteAppServerSandboxMode {
+    nonisolated var requestValue: String {
+        switch self {
+        case .readOnly:
+            return "read-only"
+        case .workspaceWrite:
+            return "workspace-write"
+        case .dangerFullAccess:
+            return "danger-full-access"
+        case .externalSandbox:
+            return "external-sandbox"
+        }
+    }
+}
+
+extension RemoteAppServerSandboxPolicy {
+    nonisolated var requestValue: [String: Any] {
+        switch mode {
+        case .dangerFullAccess:
+            return ["type": "dangerFullAccess"]
+        case .readOnly:
+            return [
+                "type": "readOnly",
+                "networkAccess": networkAccessEnabled ?? false
+            ]
+        case .workspaceWrite:
+            return [
+                "type": "workspaceWrite",
+                "networkAccess": networkAccessEnabled ?? false,
+                "writableRoots": writableRoots,
+                "excludeTmpdirEnvVar": excludeTmpdirEnvVar,
+                "excludeSlashTmp": excludeSlashTmp,
+                "readOnlyAccess": ["type": "fullAccess"]
+            ]
+        case .externalSandbox:
+            return ["type": "externalSandbox"]
+        }
+    }
+}
+
+extension RemoteAppServerCollaborationMode {
+    nonisolated var requestValue: [String: Any] {
+        var payloadSettings: [String: Any] = [
+            "model": settings.model
+        ]
+        if let reasoningEffort = settings.reasoningEffort?.rawValue {
+            payloadSettings["reasoningEffort"] = reasoningEffort
+        }
+        if let developerInstructions = settings.developerInstructions {
+            payloadSettings["developerInstructions"] = developerInstructions
+        } else {
+            payloadSettings["developerInstructions"] = NSNull()
+        }
+
+        return [
+            "mode": mode.rawValue,
+            "settings": payloadSettings
+        ]
+    }
 }
 
 nonisolated struct RemoteAppServerThread: Codable, Equatable, Sendable {

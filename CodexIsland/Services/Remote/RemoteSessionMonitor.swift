@@ -56,14 +56,24 @@ nonisolated protocol RemoteAppServerConnectionProtocol: Sendable {
     func stop() async
     func normalizeCwd(_ cwd: String) async throws -> String?
     func resolveDisplayCwdFilter(_ cwd: String) async throws -> String?
-    func startThread(defaultCwd: String) async throws -> RemoteAppServerThread
-    func resumeThread(threadId: String) async throws -> RemoteAppServerThread
-    func sendMessage(threadId: String, text: String, activeTurnId: String?) async throws
+    func startThread(defaultCwd: String) async throws -> RemoteAppServerThreadStartResponse
+    func resumeThread(
+        threadId: String,
+        turnContext: RemoteThreadTurnContext?
+    ) async throws -> RemoteAppServerThreadResumeResponse
+    func sendMessage(
+        threadId: String,
+        text: String,
+        activeTurnId: String?,
+        turnContext: RemoteThreadTurnContext
+    ) async throws
     func interrupt(threadId: String, turnId: String) async throws
     func respond(to approval: RemotePendingApproval, allow: Bool) async throws
     func respond(to approval: RemotePendingApproval, action: PendingApprovalAction) async throws
     func respond(to interaction: PendingUserInputInteraction, answers: PendingInteractionAnswerPayload) async throws
     func refreshThreads() async throws
+    func listModels(includeHidden: Bool) async throws -> [RemoteAppServerModel]
+    func listCollaborationModes() async throws -> [RemoteAppServerCollaborationModeMask]
 }
 
 extension RemoteAppServerConnectionProtocol {
@@ -329,6 +339,26 @@ final class RemoteSessionMonitor: ObservableObject {
         }
     }
 
+    func refreshHostNow(id: String) async throws {
+        guard let connection = connections[id] else { throw RemoteSessionError.notConnected }
+        try await connection.refreshThreads()
+        hostActionErrors.removeValue(forKey: id)
+    }
+
+    func listModels(hostId: String, includeHidden: Bool = false) async throws -> [RemoteAppServerModel] {
+        guard let connection = connections[hostId] else {
+            throw RemoteSessionError.notConnected
+        }
+        return try await connection.listModels(includeHidden: includeHidden)
+    }
+
+    func listCollaborationModes(hostId: String) async throws -> [RemoteAppServerCollaborationModeMask] {
+        guard let connection = connections[hostId] else {
+            throw RemoteSessionError.notConnected
+        }
+        return try await connection.listCollaborationModes()
+    }
+
     func addHost() {
         hosts.append(RemoteHostConfig())
         persistHosts()
@@ -418,10 +448,16 @@ final class RemoteSessionMonitor: ObservableObject {
         )
 
         do {
-            let thread = try await connection.startThread(defaultCwd: host.defaultCwd)
+            let response = try await connection.startThread(defaultCwd: host.defaultCwd)
+            let thread = response.thread
             markStateChanged()
             hostActionErrors.removeValue(forKey: hostId)
             apply(event: .threadUpsert(hostId: hostId, thread: thread))
+            updateTurnContextSnapshot(
+                hostId: hostId,
+                threadId: thread.id,
+                snapshot: turnContext(from: response)
+            )
             await logMonitorEvent(
                 level: .info,
                 hostId: hostId,
@@ -470,10 +506,16 @@ final class RemoteSessionMonitor: ObservableObject {
         }
 
         do {
-            let thread = try await connection.resumeThread(threadId: threadId)
+            let response = try await connection.resumeThread(threadId: threadId, turnContext: nil)
+            let thread = response.thread
             markStateChanged()
             hostActionErrors.removeValue(forKey: hostId)
             apply(event: .threadUpsert(hostId: hostId, thread: thread))
+            updateTurnContextSnapshot(
+                hostId: hostId,
+                threadId: thread.id,
+                snapshot: turnContext(from: response)
+            )
             await logMonitorEvent(
                 level: .info,
                 hostId: hostId,
@@ -515,8 +557,16 @@ final class RemoteSessionMonitor: ObservableObject {
             try await connection.sendMessage(
                 threadId: thread.threadId,
                 text: text,
-                activeTurnId: thread.canSteerTurn ? thread.activeTurnId : nil
+                activeTurnId: thread.canSteerTurn ? thread.activeTurnId : nil,
+                turnContext: thread.turnContext
             )
+            if !thread.canSteerTurn {
+                updateTurnContextSnapshot(
+                    hostId: thread.hostId,
+                    threadId: thread.threadId,
+                    snapshot: thread.turnContext
+                )
+            }
             await logMonitorEvent(
                 level: .info,
                 hostId: thread.hostId,
@@ -555,6 +605,51 @@ final class RemoteSessionMonitor: ObservableObject {
             )
             throw error
         }
+    }
+
+    func setTurnContext(
+        thread: RemoteThreadState,
+        turnContext desiredTurnContext: RemoteThreadTurnContext,
+        synchronizeThread: Bool
+    ) async throws -> RemoteThreadState {
+        if synchronizeThread {
+            guard let connection = connections[thread.hostId] else {
+                throw RemoteSessionError.notConnected
+            }
+            let response = try await connection.resumeThread(
+                threadId: thread.threadId,
+                turnContext: desiredTurnContext
+            )
+            let resumedThread = response.thread
+            markStateChanged()
+            apply(event: .threadUpsert(hostId: thread.hostId, thread: resumedThread))
+            updateTurnContextSnapshot(
+                hostId: thread.hostId,
+                threadId: resumedThread.id,
+                snapshot: mergeTurnContext(
+                    base: turnContext(from: response),
+                    overridingWith: desiredTurnContext
+                )
+            )
+            guard let state = threads.first(where: {
+                $0.hostId == thread.hostId && $0.threadId == resumedThread.id
+            }) else {
+                throw RemoteSessionError.missingThread
+            }
+            return state
+        }
+
+        updateTurnContextSnapshot(
+            hostId: thread.hostId,
+            threadId: thread.threadId,
+            snapshot: desiredTurnContext
+        )
+        guard let state = threads.first(where: {
+            $0.hostId == thread.hostId && $0.threadId == thread.threadId
+        }) else {
+            throw RemoteSessionError.missingThread
+        }
+        return state
     }
 
     func interrupt(thread: RemoteThreadState) async throws {
@@ -864,7 +959,8 @@ final class RemoteSessionMonitor: ObservableObject {
             canSteerTurn: computedTurn != nil,
             pendingApproval: nil,
             pendingInteractions: [],
-            connectionState: connectionState
+            connectionState: connectionState,
+            turnContext: .empty
         )
 
         threads.append(state)
@@ -913,6 +1009,16 @@ final class RemoteSessionMonitor: ObservableObject {
                 }
             }
         }
+    }
+
+    private func updateTurnContextSnapshot(
+        hostId: String,
+        threadId: String,
+        snapshot: RemoteThreadTurnContext
+    ) {
+        guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
+        markStateChanged()
+        threads[index].turnContext = snapshot
     }
 
     private func clearPendingApproval(hostId: String, threadId: String, itemId: String) {
@@ -1044,6 +1150,19 @@ final class RemoteSessionMonitor: ObservableObject {
                 }
                 return lhs.createdAt > rhs.createdAt
             }
+    }
+
+    func appendLocalInfoMessage(thread: RemoteThreadState, message: String) {
+        guard let index = threadIndex(hostId: thread.hostId, threadId: thread.threadId) else { return }
+        markStateChanged()
+        threads[index].history.append(ChatHistoryItem(
+            id: "remote-local-info-\(UUID().uuidString)",
+            type: .assistant(message),
+            timestamp: Date()
+        ))
+        threads[index].updatedAt = Date()
+        threads[index].lastActivity = Date()
+        updateDerivedFields(at: index)
     }
 
     func recoverNewThread(hostId: String, excluding existingIds: Set<String>) -> RemoteThreadState? {
@@ -1252,6 +1371,45 @@ final class RemoteSessionMonitor: ObservableObject {
         guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
         threads[index].history.removeAll { $0.id == localId }
         updateDerivedFields(at: index)
+    }
+
+    private func turnContext(from response: RemoteAppServerThreadStartResponse) -> RemoteThreadTurnContext {
+        RemoteThreadTurnContext(
+            model: response.model,
+            reasoningEffort: response.reasoningEffort,
+            approvalPolicy: response.approvalPolicy,
+            approvalsReviewer: response.approvalsReviewer,
+            sandboxPolicy: response.sandbox,
+            serviceTier: response.serviceTier,
+            collaborationMode: nil
+        )
+    }
+
+    private func turnContext(from response: RemoteAppServerThreadResumeResponse) -> RemoteThreadTurnContext {
+        RemoteThreadTurnContext(
+            model: response.model,
+            reasoningEffort: response.reasoningEffort,
+            approvalPolicy: response.approvalPolicy,
+            approvalsReviewer: response.approvalsReviewer,
+            sandboxPolicy: response.sandbox,
+            serviceTier: response.serviceTier,
+            collaborationMode: nil
+        )
+    }
+
+    private func mergeTurnContext(
+        base: RemoteThreadTurnContext,
+        overridingWith override: RemoteThreadTurnContext
+    ) -> RemoteThreadTurnContext {
+        var merged = base
+        merged.model = override.model ?? base.model
+        merged.reasoningEffort = override.reasoningEffort ?? base.reasoningEffort
+        merged.approvalPolicy = override.approvalPolicy ?? base.approvalPolicy
+        merged.approvalsReviewer = override.approvalsReviewer ?? base.approvalsReviewer
+        merged.sandboxPolicy = override.sandboxPolicy ?? base.sandboxPolicy
+        merged.serviceTier = override.serviceTier ?? base.serviceTier
+        merged.collaborationMode = override.collaborationMode ?? base.collaborationMode
+        return merged
     }
 
     private func phase(
@@ -1468,21 +1626,31 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
         try await resolveRemoteCwd(cwd, treatHomeAsNilPayload: false)
     }
 
-    func startThread(defaultCwd: String) async throws -> RemoteAppServerThread {
+    func startThread(defaultCwd: String) async throws -> RemoteAppServerThreadStartResponse {
         let normalizedCwd = try await normalizeRemoteCwd(defaultCwd)
         let params: [String: Any] = normalizedCwd?.isEmpty != false ? [:] : ["cwd": normalizedCwd!]
         let result = try await request(method: "thread/start", params: params)
-        let response = try remoteDecodeValue(result ?? AnyCodable([:]), as: RemoteAppServerThreadStartResponse.self)
-        return response.thread
+        return try remoteDecodeValue(result ?? AnyCodable([:]), as: RemoteAppServerThreadStartResponse.self)
     }
 
-    func resumeThread(threadId: String) async throws -> RemoteAppServerThread {
-        let result = try await request(method: "thread/resume", params: ["threadId": threadId])
-        let response = try remoteDecodeValue(result ?? AnyCodable([:]), as: RemoteAppServerThreadResumeResponse.self)
-        return response.thread
+    func resumeThread(
+        threadId: String,
+        turnContext: RemoteThreadTurnContext?
+    ) async throws -> RemoteAppServerThreadResumeResponse {
+        var params: [String: Any] = ["threadId": threadId]
+        if let turnContext {
+            params.merge(threadResumeParams(for: turnContext)) { _, new in new }
+        }
+        let result = try await request(method: "thread/resume", params: params)
+        return try remoteDecodeValue(result ?? AnyCodable([:]), as: RemoteAppServerThreadResumeResponse.self)
     }
 
-    func sendMessage(threadId: String, text: String, activeTurnId: String?) async throws {
+    func sendMessage(
+        threadId: String,
+        text: String,
+        activeTurnId: String?,
+        turnContext: RemoteThreadTurnContext
+    ) async throws {
         if let activeTurnId {
             _ = try await request(
                 method: "turn/steer",
@@ -1500,7 +1668,7 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
             params: [
                 "threadId": threadId,
                 "input": [["type": "text", "text": text]]
-            ]
+            ].merging(turnStartParams(for: turnContext)) { _, new in new }
         )
     }
 
@@ -1568,10 +1736,34 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
         await emit(.threadList(hostId: host.id, threads: response.data))
     }
 
+    func listModels(includeHidden: Bool) async throws -> [RemoteAppServerModel] {
+        let result = try await request(
+            method: "models/list",
+            params: [
+                "limit": 100,
+                "includeHidden": includeHidden
+            ]
+        )
+        let response = try remoteDecodeValue(result ?? AnyCodable([:]), as: RemoteAppServerModelListResponse.self)
+        return response.data
+    }
+
+    func listCollaborationModes() async throws -> [RemoteAppServerCollaborationModeMask] {
+        let result = try await request(method: "collaborationMode/list", params: [:])
+        let response = try remoteDecodeValue(
+            result ?? AnyCodable([:]),
+            as: RemoteAppServerCollaborationModeListResponse.self
+        )
+        return response.data
+    }
+
     private func initialize() async throws {
         _ = try await request(
             method: "initialize",
             params: [
+                "capabilities": [
+                    "experimentalApi": true
+                ],
                 "clientInfo": [
                     "name": "codex_island",
                     "title": "Codex Island",
@@ -1580,6 +1772,52 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
             ]
         )
         try await sendNotification(method: "initialized", params: nil)
+    }
+
+    private func threadResumeParams(for turnContext: RemoteThreadTurnContext) -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let model = turnContext.model, !model.isEmpty {
+            params["model"] = model
+        }
+        if let approvalPolicy = turnContext.approvalPolicy?.requestValue {
+            params["approvalPolicy"] = approvalPolicy
+        }
+        if let approvalsReviewer = turnContext.approvalsReviewer {
+            params["approvalsReviewer"] = approvalsReviewer.rawValue
+        }
+        if let sandbox = turnContext.sandboxPolicy?.sandboxMode.requestValue {
+            params["sandbox"] = sandbox
+        }
+        if let serviceTier = turnContext.serviceTier?.rawValue {
+            params["serviceTier"] = serviceTier
+        }
+        return params
+    }
+
+    private func turnStartParams(for turnContext: RemoteThreadTurnContext) -> [String: Any] {
+        var params: [String: Any] = [:]
+        if let model = turnContext.model, !model.isEmpty {
+            params["model"] = model
+        }
+        if let effort = turnContext.reasoningEffort?.rawValue {
+            params["effort"] = effort
+        }
+        if let approvalPolicy = turnContext.approvalPolicy?.requestValue {
+            params["approvalPolicy"] = approvalPolicy
+        }
+        if let approvalsReviewer = turnContext.approvalsReviewer {
+            params["approvalsReviewer"] = approvalsReviewer.rawValue
+        }
+        if let sandboxPolicy = turnContext.sandboxPolicy {
+            params["sandboxPolicy"] = sandboxPolicy.requestValue
+        }
+        if let serviceTier = turnContext.serviceTier?.rawValue {
+            params["serviceTier"] = serviceTier
+        }
+        if let collaborationMode = turnContext.collaborationMode {
+            params["collaborationMode"] = collaborationMode.requestValue
+        }
+        return params
     }
 
     private func startRefreshLoop() {

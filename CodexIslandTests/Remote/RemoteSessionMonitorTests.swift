@@ -41,8 +41,8 @@ final class RemoteSessionMonitorTests: XCTestCase {
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
         let baseThread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
 
-        connection.startThreadHandler = { _ in baseThread }
-        connection.sendMessageHandler = { _, _, _ in
+        connection.startThreadHandler = { _ in makeThreadStartResponse(thread: baseThread) }
+        connection.sendMessageHandler = { _, _, _, _ in
             throw RemoteSessionError.timeout("Timed out waiting for app-server response to turn/start")
         }
 
@@ -75,8 +75,8 @@ final class RemoteSessionMonitorTests: XCTestCase {
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
         let baseThread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
 
-        connection.startThreadHandler = { _ in baseThread }
-        connection.sendMessageHandler = { _, _, _ in }
+        connection.startThreadHandler = { _ in makeThreadStartResponse(thread: baseThread) }
+        connection.sendMessageHandler = { _, _, _, _ in }
 
         let monitor = RemoteSessionMonitor(
             initialHosts: [host],
@@ -114,7 +114,7 @@ final class RemoteSessionMonitorTests: XCTestCase {
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
         let baseThread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
 
-        connection.sendMessageHandler = { _, _, _ in
+        connection.sendMessageHandler = { _, _, _, _ in
             throw RemoteSessionError.transport("boom")
         }
 
@@ -421,7 +421,7 @@ final class RemoteSessionMonitorTests: XCTestCase {
 
         connection.startThreadHandler = { _ in
             tracker.didCallStart = true
-            return makeThread(id: "thread-new", preview: "New", cwd: "/repo")
+            return makeThreadStartResponse(thread: makeThread(id: "thread-new", preview: "New", cwd: "/repo"))
         }
 
         let monitor = RemoteSessionMonitor(

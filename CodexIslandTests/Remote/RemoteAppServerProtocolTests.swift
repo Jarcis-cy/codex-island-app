@@ -26,7 +26,13 @@ final class RemoteAppServerProtocolTests: XCTestCase {
     func testRemoteSlashSubmitActionRecognizesSupportedCommand() {
         let action = RemoteSlashCommand.submitAction(for: " /plan ")
 
-        XCTAssertEqual(action, .presentSlashCommand(.plan))
+        XCTAssertEqual(action, .command(.plan, args: nil))
+    }
+
+    func testRemoteSlashSubmitActionParsesPlanInlineArgs() {
+        let action = RemoteSlashCommand.submitAction(for: "/plan build the plan")
+
+        XCTAssertEqual(action, .command(.plan, args: "build the plan"))
     }
 
     func testRemoteSlashSubmitActionRejectsUnknownSlashCommand() {

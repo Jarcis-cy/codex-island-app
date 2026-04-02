@@ -99,14 +99,16 @@ enum TestObjectRetainer {
 
 final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked Sendable {
     var emit: (@Sendable (RemoteConnectionEvent) async -> Void)?
-    var startThreadHandler: (@Sendable (String) async throws -> RemoteAppServerThread)?
-    var resumeThreadHandler: (@Sendable (String) async throws -> RemoteAppServerThread)?
-    var sendMessageHandler: (@Sendable (String, String, String?) async throws -> Void)?
+    var startThreadHandler: (@Sendable (String) async throws -> RemoteAppServerThreadStartResponse)?
+    var resumeThreadHandler: (@Sendable (String, RemoteThreadTurnContext?) async throws -> RemoteAppServerThreadResumeResponse)?
+    var sendMessageHandler: (@Sendable (String, String, String?, RemoteThreadTurnContext) async throws -> Void)?
     var interruptHandler: (@Sendable (String, String) async throws -> Void)?
     var respondHandler: (@Sendable (RemotePendingApproval, Bool) async throws -> Void)?
     var respondActionHandler: (@Sendable (RemotePendingApproval, PendingApprovalAction) async throws -> Void)?
     var respondUserInputHandler: (@Sendable (PendingUserInputInteraction, PendingInteractionAnswerPayload) async throws -> Void)?
     var refreshThreadsHandler: (@Sendable () async throws -> Void)?
+    var listModelsHandler: (@Sendable (Bool) async throws -> [RemoteAppServerModel])?
+    var listCollaborationModesHandler: (@Sendable () async throws -> [RemoteAppServerCollaborationModeMask])?
 
     private(set) var startCalled = false
     private(set) var stopCalled = false
@@ -130,22 +132,30 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
         try await normalizeCwd(cwd)
     }
 
-    func startThread(defaultCwd: String) async throws -> RemoteAppServerThread {
+    func startThread(defaultCwd: String) async throws -> RemoteAppServerThreadStartResponse {
         guard let startThreadHandler else {
             fatalError("startThreadHandler not configured")
         }
         return try await startThreadHandler(defaultCwd)
     }
 
-    func resumeThread(threadId: String) async throws -> RemoteAppServerThread {
+    func resumeThread(
+        threadId: String,
+        turnContext: RemoteThreadTurnContext?
+    ) async throws -> RemoteAppServerThreadResumeResponse {
         guard let resumeThreadHandler else {
             fatalError("resumeThreadHandler not configured")
         }
-        return try await resumeThreadHandler(threadId)
+        return try await resumeThreadHandler(threadId, turnContext)
     }
 
-    func sendMessage(threadId: String, text: String, activeTurnId: String?) async throws {
-        try await sendMessageHandler?(threadId, text, activeTurnId)
+    func sendMessage(
+        threadId: String,
+        text: String,
+        activeTurnId: String?,
+        turnContext: RemoteThreadTurnContext
+    ) async throws {
+        try await sendMessageHandler?(threadId, text, activeTurnId, turnContext)
     }
 
     func interrupt(threadId: String, turnId: String) async throws {
@@ -171,6 +181,14 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
     func refreshThreads() async throws {
         try await refreshThreadsHandler?()
     }
+
+    func listModels(includeHidden: Bool) async throws -> [RemoteAppServerModel] {
+        try await listModelsHandler?(includeHidden) ?? []
+    }
+
+    func listCollaborationModes() async throws -> [RemoteAppServerCollaborationModeMask] {
+        try await listCollaborationModesHandler?() ?? []
+    }
 }
 
 func makeThread(
@@ -193,6 +211,54 @@ func makeThread(
         cliVersion: "1.0.0",
         name: nil,
         turns: turns
+    )
+}
+
+func makeThreadStartResponse(
+    thread: RemoteAppServerThread,
+    model: String = "gpt-5.4",
+    modelProvider: String = "openai",
+    serviceTier: RemoteAppServerServiceTier? = nil,
+    cwd: String = "/tmp",
+    approvalPolicy: RemoteAppServerApprovalPolicy = .onRequest,
+    approvalsReviewer: RemoteAppServerApprovalsReviewer = .user,
+    sandbox: RemoteAppServerSandboxPolicy = .workspaceWrite(),
+    reasoningEffort: RemoteAppServerReasoningEffort? = .medium
+) -> RemoteAppServerThreadStartResponse {
+    RemoteAppServerThreadStartResponse(
+        thread: thread,
+        model: model,
+        modelProvider: modelProvider,
+        serviceTier: serviceTier,
+        cwd: cwd,
+        approvalPolicy: approvalPolicy,
+        approvalsReviewer: approvalsReviewer,
+        sandbox: sandbox,
+        reasoningEffort: reasoningEffort
+    )
+}
+
+func makeThreadResumeResponse(
+    thread: RemoteAppServerThread,
+    model: String = "gpt-5.4",
+    modelProvider: String = "openai",
+    serviceTier: RemoteAppServerServiceTier? = nil,
+    cwd: String = "/tmp",
+    approvalPolicy: RemoteAppServerApprovalPolicy = .onRequest,
+    approvalsReviewer: RemoteAppServerApprovalsReviewer = .user,
+    sandbox: RemoteAppServerSandboxPolicy = .workspaceWrite(),
+    reasoningEffort: RemoteAppServerReasoningEffort? = .medium
+) -> RemoteAppServerThreadResumeResponse {
+    RemoteAppServerThreadResumeResponse(
+        thread: thread,
+        model: model,
+        modelProvider: modelProvider,
+        serviceTier: serviceTier,
+        cwd: cwd,
+        approvalPolicy: approvalPolicy,
+        approvalsReviewer: approvalsReviewer,
+        sandbox: sandbox,
+        reasoningEffort: reasoningEffort
     )
 }
 
