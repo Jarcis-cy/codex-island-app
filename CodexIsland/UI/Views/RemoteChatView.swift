@@ -154,6 +154,10 @@ struct RemoteChatView: View {
         return RemoteSlashCommand.matches(for: inputText)
     }
 
+    private var isPlanModeActive: Bool {
+        thread.turnContext.collaborationMode?.mode == .plan
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -243,10 +247,22 @@ struct RemoteChatView: View {
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text(thread.displayTitle)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.9))
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(thread.displayTitle)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.9))
+                        .lineLimit(1)
+
+                    if isPlanModeActive {
+                        Text("PLAN MODE")
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundColor(.black.opacity(0.9))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(TerminalColors.amber.opacity(0.95))
+                            .clipShape(Capsule())
+                    }
+                }
 
                 Text(thread.sourceDetail)
                     .font(.system(size: 10, weight: .medium))
@@ -330,6 +346,10 @@ struct RemoteChatView: View {
 
     private var composer: some View {
         VStack(spacing: 8) {
+            if isPlanModeActive {
+                planModeBanner
+            }
+
             if let activeSlashPanel {
                 slashPanel(activeSlashPanel)
             } else if !matchingSlashCommands.isEmpty {
@@ -342,6 +362,28 @@ struct RemoteChatView: View {
 
             inputBar
         }
+    }
+
+    private var planModeBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "list.bullet.clipboard")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(TerminalColors.amber)
+
+            Text("Plan Mode active. `/plan` again will switch back to Default mode.")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.72))
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.06))
+        )
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
     }
 
     private var inputBar: some View {
@@ -724,6 +766,9 @@ struct RemoteChatView: View {
             return "Steer active turn..."
         }
         if thread.canStartTurn {
+            if isPlanModeActive {
+                return "Message remote Codex in Plan Mode..."
+            }
             return "Message remote Codex..."
         }
         return "Remote thread is busy"
@@ -866,7 +911,45 @@ struct RemoteChatView: View {
         do {
             let modes = try await remoteSessionMonitor.listCollaborationModes(hostId: thread.hostId)
             let planMask = modes.first(where: { $0.mode == .plan })
+            let defaultMask = modes.first(where: { $0.mode == .default })
             let currentContext = thread.turnContext
+            let togglingOff = args == nil && isPlanModeActive
+
+            if togglingOff {
+                let effectiveModel = currentContext.effectiveModel ?? currentContext.model
+                guard let effectiveModel else {
+                    await MainActor.run {
+                        slashFeedbackMessage = "Default mode is unavailable right now."
+                    }
+                    return
+                }
+
+                let effectiveEffort = currentContext.effectiveReasoningEffort ?? currentContext.reasoningEffort
+                var updatedContext = currentContext
+                updatedContext.model = defaultMask?.model ?? effectiveModel
+                updatedContext.reasoningEffort = defaultMask?.reasoningEffort ?? effectiveEffort
+                updatedContext.collaborationMode = RemoteAppServerCollaborationMode(
+                    mode: .default,
+                    settings: RemoteAppServerCollaborationSettings(
+                        developerInstructions: nil,
+                        model: updatedContext.model ?? effectiveModel,
+                        reasoningEffort: updatedContext.reasoningEffort
+                    )
+                )
+
+                let updatedThread = try await remoteSessionMonitor.setTurnContext(
+                    thread: thread,
+                    turnContext: updatedContext,
+                    synchronizeThread: false
+                )
+
+                await MainActor.run {
+                    thread = updatedThread
+                    slashFeedbackMessage = "Plan mode disabled. Default mode will be used for the next turn."
+                }
+                return
+            }
+
             let planModel = planMask?.model ?? currentContext.effectiveModel ?? currentContext.model
             let planEffort = planMask?.reasoningEffort ?? currentContext.effectiveReasoningEffort ?? currentContext.reasoningEffort
 
@@ -898,7 +981,7 @@ struct RemoteChatView: View {
             await MainActor.run {
                 thread = updatedThread
                 slashFeedbackMessage = args == nil
-                    ? "Plan mode enabled for the next turn."
+                    ? "Plan mode enabled."
                     : nil
             }
 

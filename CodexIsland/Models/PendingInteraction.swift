@@ -68,7 +68,13 @@ nonisolated struct PendingInteractionQuestion: Equatable, Sendable {
     }
 
     var supportsInlineResponse: Bool {
-        !isOther && !isSecret
+        if isSecret {
+            return false
+        }
+        if isChoiceQuestion {
+            return true
+        }
+        return !isOther
     }
 }
 

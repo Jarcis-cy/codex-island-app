@@ -69,6 +69,22 @@ final class RemoteAppServerProtocolTests: XCTestCase {
         XCTAssertEqual(action, .rejectSlashCommand("Unsupported remote command: /unknown"))
     }
 
+    func testChoiceQuestionWithOtherStillSupportsInlineResponse() {
+        let question = PendingInteractionQuestion(
+            id: "mode",
+            header: "Mode",
+            question: "Choose a demo",
+            options: [
+                PendingInteractionOption(label: "A", description: nil),
+                PendingInteractionOption(label: "B", description: nil)
+            ],
+            isOther: true,
+            isSecret: false
+        )
+
+        XCTAssertTrue(question.supportsInlineResponse)
+    }
+
     func testDecodeActiveThreadStatus() throws {
         let data = #"{"type":"active","activeFlags":["waitingOnUserInput"]}"#.data(using: .utf8)!
         let status = try JSONDecoder().decode(RemoteAppServerThreadStatus.self, from: data)

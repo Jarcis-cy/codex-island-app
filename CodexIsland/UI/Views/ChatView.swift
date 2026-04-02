@@ -1096,7 +1096,7 @@ struct PendingInteractionBar: View {
 
     @ViewBuilder
     private func userInputContent(_ request: PendingUserInputInteraction) -> some View {
-        if !request.supportsInlineResponse || !canRespondInline {
+        if !canRespondInline || request.questions.isEmpty {
             HStack {
                 Spacer()
                 Button {
@@ -1160,6 +1160,49 @@ struct PendingInteractionBar: View {
                             }
                             .buttonStyle(.plain)
                             .disabled(isSubmitting)
+                        }
+
+                        if question.isOther {
+                            HStack(spacing: 10) {
+                                TextField("Other answer", text: $textAnswer)
+                                    .textFieldStyle(.plain)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 18)
+                                            .fill(Color.white.opacity(0.08))
+                                            .overlay(
+                                                RoundedRectangle(cornerRadius: 18)
+                                                    .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                                            )
+                                    )
+                                    .onSubmit {
+                                        guard !textAnswer.isEmpty else { return }
+                                        selectedAnswers[question.id] = textAnswer
+                                        Task {
+                                            await advanceOrSubmit(request: request)
+                                        }
+                                    }
+
+                                Button {
+                                    selectedAnswers[question.id] = textAnswer
+                                    Task {
+                                        await advanceOrSubmit(request: request)
+                                    }
+                                } label: {
+                                    Text(currentQuestionIndex + 1 == request.questions.count ? "Send" : "Next")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(.black)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(Color.white.opacity(textAnswer.isEmpty ? 0.2 : 0.95))
+                                        .clipShape(Capsule())
+                                }
+                                .buttonStyle(.plain)
+                                .disabled(textAnswer.isEmpty || isSubmitting)
+                            }
                         }
                     }
                 } else {
