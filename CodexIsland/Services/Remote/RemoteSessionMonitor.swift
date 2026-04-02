@@ -1738,7 +1738,7 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
 
     func listModels(includeHidden: Bool) async throws -> [RemoteAppServerModel] {
         let result = try await request(
-            method: "models/list",
+            method: "model/list",
             params: [
                 "limit": 100,
                 "includeHidden": includeHidden

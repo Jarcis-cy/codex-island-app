@@ -419,7 +419,7 @@ extension RemoteAppServerCollaborationMode {
             "model": settings.model
         ]
         if let reasoningEffort = settings.reasoningEffort?.rawValue {
-            payloadSettings["reasoningEffort"] = reasoningEffort
+            payloadSettings["reasoning_effort"] = reasoningEffort
         }
         if let developerInstructions = settings.developerInstructions {
             payloadSettings["developerInstructions"] = developerInstructions

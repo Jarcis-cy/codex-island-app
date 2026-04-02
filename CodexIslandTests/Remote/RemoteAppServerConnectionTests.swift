@@ -268,7 +268,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         XCTAssertEqual(collaborationMode["mode"] as? String, "plan")
         let settings = try XCTUnwrap(collaborationMode["settings"] as? [String: Any])
         XCTAssertEqual(settings["model"] as? String, "gpt-5.4")
-        XCTAssertEqual(settings["reasoningEffort"] as? String, "high")
+        XCTAssertEqual(settings["reasoning_effort"] as? String, "high")
         XCTAssertTrue(settings["developerInstructions"] is NSNull)
 
         try await transport.emitStdout(
@@ -316,7 +316,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         let sentLines = await transport.sentLines
         let line = try XCTUnwrap(sentLines.first)
         let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
-        XCTAssertEqual(payload["method"] as? String, "models/list")
+        XCTAssertEqual(payload["method"] as? String, "model/list")
 
         try await transport.emitStdout(
             makeEnvelopeJSON(
