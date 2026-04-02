@@ -118,6 +118,7 @@ class ChatHistoryManager: ObservableObject {
         trimmed.hasPrefix("<environment_context>") ||
         trimmed.hasPrefix("<permissions instructions>") ||
         trimmed.hasPrefix("<collaboration_mode>") ||
+        trimmed.hasPrefix("<turn_aborted>") ||
         trimmed.hasPrefix("<skills_instructions>") ||
         trimmed.hasPrefix("<plugins_instructions>") ||
         trimmed.hasPrefix("<apps_instructions>") ||
