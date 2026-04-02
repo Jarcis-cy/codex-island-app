@@ -23,6 +23,34 @@ final class RemoteAppServerProtocolTests: XCTestCase {
         XCTAssertEqual(payload.plan[1], RemoteAppServerPlanStep(step: "Patch UI", status: "in_progress"))
     }
 
+    func testDecodeLegacyThreadStartResponseWithoutConfigSnapshotFields() throws {
+        let data = #"""
+        {
+          "thread": {
+            "id": "thread-1",
+            "preview": "Preview",
+            "ephemeral": false,
+            "modelProvider": "openai",
+            "createdAt": 1700000000,
+            "updatedAt": 1700000100,
+            "status": { "type": "idle" },
+            "path": null,
+            "cwd": "/tmp",
+            "cliVersion": "1.0.0",
+            "name": null,
+            "turns": []
+          }
+        }
+        """#.data(using: .utf8)!
+
+        let response = try JSONDecoder().decode(RemoteAppServerThreadStartResponse.self, from: data)
+
+        XCTAssertEqual(response.thread.id, "thread-1")
+        XCTAssertNil(response.model)
+        XCTAssertNil(response.approvalPolicy)
+        XCTAssertNil(response.sandbox)
+    }
+
     func testRemoteSlashSubmitActionRecognizesSupportedCommand() {
         let action = RemoteSlashCommand.submitAction(for: " /plan ")
 

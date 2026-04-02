@@ -81,25 +81,25 @@ nonisolated struct RemoteAppServerThreadReadResponse: Codable, Sendable {
 
 nonisolated struct RemoteAppServerThreadResumeResponse: Codable, Sendable {
     let thread: RemoteAppServerThread
-    let model: String
-    let modelProvider: String
+    let model: String?
+    let modelProvider: String?
     let serviceTier: RemoteAppServerServiceTier?
-    let cwd: String
-    let approvalPolicy: RemoteAppServerApprovalPolicy
-    let approvalsReviewer: RemoteAppServerApprovalsReviewer
-    let sandbox: RemoteAppServerSandboxPolicy
+    let cwd: String?
+    let approvalPolicy: RemoteAppServerApprovalPolicy?
+    let approvalsReviewer: RemoteAppServerApprovalsReviewer?
+    let sandbox: RemoteAppServerSandboxPolicy?
     let reasoningEffort: RemoteAppServerReasoningEffort?
 }
 
 nonisolated struct RemoteAppServerThreadStartResponse: Codable, Sendable {
     let thread: RemoteAppServerThread
-    let model: String
-    let modelProvider: String
+    let model: String?
+    let modelProvider: String?
     let serviceTier: RemoteAppServerServiceTier?
-    let cwd: String
-    let approvalPolicy: RemoteAppServerApprovalPolicy
-    let approvalsReviewer: RemoteAppServerApprovalsReviewer
-    let sandbox: RemoteAppServerSandboxPolicy
+    let cwd: String?
+    let approvalPolicy: RemoteAppServerApprovalPolicy?
+    let approvalsReviewer: RemoteAppServerApprovalsReviewer?
+    let sandbox: RemoteAppServerSandboxPolicy?
     let reasoningEffort: RemoteAppServerReasoningEffort?
 }
 
