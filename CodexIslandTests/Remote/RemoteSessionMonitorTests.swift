@@ -146,6 +146,59 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.threads.first?.logicalSessionId, "remote|ssh-target|/repo")
     }
 
+    func testThreadListFiltersThreadsToConfiguredDefaultCwd() {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
+        let matchingThread = makeThread(id: "thread-1", preview: "Repo", cwd: "/repo")
+        let otherThread = makeThread(id: "thread-2", preview: "Other", cwd: "/other")
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadList(hostId: host.id, threads: [matchingThread, otherThread]))
+
+        XCTAssertEqual(monitor.threads.count, 1)
+        XCTAssertEqual(monitor.threads.first?.threadId, "thread-1")
+        XCTAssertEqual(monitor.threads.first?.cwd, "/repo")
+    }
+
+    func testThreadListKeepsAllThreadsWhenDefaultCwdIsEmpty() {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        let firstThread = makeThread(id: "thread-1", preview: "Repo", cwd: "/repo")
+        let secondThread = makeThread(id: "thread-2", preview: "Other", cwd: "/other")
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadList(hostId: host.id, threads: [firstThread, secondThread]))
+
+        XCTAssertEqual(monitor.threads.count, 2)
+        XCTAssertEqual(Set(monitor.threads.map(\.threadId)), Set(["thread-1", "thread-2"]))
+    }
+
     func testStartThreadReturnsExistingLogicalSessionForSameCwd() async throws {
         final class CallTracker: @unchecked Sendable {
             var didCallStart = false

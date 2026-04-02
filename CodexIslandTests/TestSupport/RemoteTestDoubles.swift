@@ -124,6 +124,10 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
         return trimmed.isEmpty ? nil : trimmed
     }
 
+    func resolveDisplayCwdFilter(_ cwd: String) async throws -> String? {
+        try await normalizeCwd(cwd)
+    }
+
     func startThread(defaultCwd: String) async throws -> RemoteAppServerThread {
         guard let startThreadHandler else {
             fatalError("startThreadHandler not configured")

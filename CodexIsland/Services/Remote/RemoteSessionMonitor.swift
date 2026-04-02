@@ -46,12 +46,19 @@ nonisolated protocol RemoteAppServerConnectionProtocol: Sendable {
     func start() async
     func stop() async
     func normalizeCwd(_ cwd: String) async throws -> String?
+    func resolveDisplayCwdFilter(_ cwd: String) async throws -> String?
     func startThread(defaultCwd: String) async throws -> RemoteAppServerThread
     func resumeThread(threadId: String) async throws -> RemoteAppServerThread
     func sendMessage(threadId: String, text: String, activeTurnId: String?) async throws
     func interrupt(threadId: String, turnId: String) async throws
     func respond(to approval: RemotePendingApproval, allow: Bool) async throws
     func refreshThreads() async throws
+}
+
+extension RemoteAppServerConnectionProtocol {
+    func resolveDisplayCwdFilter(_ cwd: String) async throws -> String? {
+        try await normalizeCwd(cwd)
+    }
 }
 
 nonisolated struct RemoteAppServerConnectionDependencies: Sendable {
@@ -127,6 +134,8 @@ final class RemoteSessionMonitor: ObservableObject {
 
     private var connections: [String: any RemoteAppServerConnectionProtocol] = [:]
     private var hostActionTasks: [String: Task<Void, Never>] = [:]
+    private var hostThreadFilters: [String: String] = [:]
+    private var hostThreadFilterTasks: [String: Task<Void, Never>] = [:]
 
     init(
         initialHosts: [RemoteHostConfig]? = nil,
@@ -155,7 +164,10 @@ final class RemoteSessionMonitor: ObservableObject {
     }
 
     private func normalizeCwdIdentity(_ cwd: String) -> String {
-        cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        guard trimmed.hasPrefix("/") else { return trimmed }
+        return URL(fileURLWithPath: trimmed).standardizedFileURL.path
     }
 
     private func logicalSessionId(sshTarget: String, cwd: String) -> String {
@@ -168,6 +180,69 @@ final class RemoteSessionMonitor: ObservableObject {
 
     private func threadIndex(logicalSessionId: String) -> Int? {
         threads.firstIndex(where: { $0.logicalSessionId == logicalSessionId })
+    }
+
+    private func provisionalThreadFilter(for host: RemoteHostConfig) -> String? {
+        let trimmed = host.defaultCwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed.hasPrefix("/") else { return nil }
+        return normalizeCwdIdentity(trimmed)
+    }
+
+    private func effectiveThreadFilter(for host: RemoteHostConfig?) -> String? {
+        guard let host else { return nil }
+        return hostThreadFilters[host.id] ?? provisionalThreadFilter(for: host)
+    }
+
+    private func shouldDisplayThread(_ thread: RemoteAppServerThread, for host: RemoteHostConfig?) -> Bool {
+        guard let filter = effectiveThreadFilter(for: host) else { return true }
+        return normalizeCwdIdentity(thread.cwd) == filter
+    }
+
+    private func applyThreadFilter(for host: RemoteHostConfig) {
+        guard let filter = effectiveThreadFilter(for: host) else { return }
+        threads.removeAll { $0.hostId == host.id && normalizeCwdIdentity($0.cwd) != filter }
+    }
+
+    private func resolveThreadFilter(for host: RemoteHostConfig) {
+        hostThreadFilterTasks[host.id]?.cancel()
+
+        if let provisional = provisionalThreadFilter(for: host) {
+            hostThreadFilters[host.id] = provisional
+            applyThreadFilter(for: host)
+        } else if host.defaultCwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            hostThreadFilters.removeValue(forKey: host.id)
+        }
+
+        guard let connection = connections[host.id],
+              !host.defaultCwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return
+        }
+
+        let hostId = host.id
+        let expectedSSH = host.sshTarget
+        let expectedDefaultCwd = host.defaultCwd
+        hostThreadFilterTasks[hostId] = Task { [weak self] in
+            guard let self else { return }
+            let resolvedFilter = try? await connection.resolveDisplayCwdFilter(expectedDefaultCwd)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                guard let currentHost = self.hosts.first(where: { $0.id == hostId }),
+                      currentHost.sshTarget == expectedSSH,
+                      currentHost.defaultCwd == expectedDefaultCwd else {
+                    return
+                }
+
+                let normalizedFilter = resolvedFilter.map(self.normalizeCwdIdentity)
+                if let normalizedFilter {
+                    self.hostThreadFilters[hostId] = normalizedFilter
+                    self.applyThreadFilter(for: currentHost)
+                } else if expectedDefaultCwd.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self.hostThreadFilters.removeValue(forKey: hostId)
+                }
+                self.hostThreadFilterTasks.removeValue(forKey: hostId)
+            }
+        }
     }
 
     func startMonitoring() {
@@ -244,6 +319,7 @@ final class RemoteSessionMonitor: ObservableObject {
         let previous = hosts[index]
         hosts[index] = host
         saveHosts(hosts)
+        resolveThreadFilter(for: host)
 
         let connectionState = hostStates[host.id] ?? .disconnected
         let shouldSync = previous.isEnabled != host.isEnabled || !connectionState.isConnected
@@ -257,6 +333,9 @@ final class RemoteSessionMonitor: ObservableObject {
         hosts.removeAll { $0.id == id }
         hostStates.removeValue(forKey: id)
         threads.removeAll { $0.hostId == id }
+        hostThreadFilters.removeValue(forKey: id)
+        hostThreadFilterTasks[id]?.cancel()
+        hostThreadFilterTasks.removeValue(forKey: id)
         if let connection = connections.removeValue(forKey: id) {
             Task { await connection.stop() }
         }
@@ -290,6 +369,8 @@ final class RemoteSessionMonitor: ObservableObject {
         hostActionInProgress.remove(id)
         hostActionTasks[id]?.cancel()
         hostActionTasks.removeValue(forKey: id)
+        hostThreadFilterTasks[id]?.cancel()
+        hostThreadFilterTasks.removeValue(forKey: id)
         if let connection = connections.removeValue(forKey: id) {
             Task { await connection.stop() }
         }
@@ -495,6 +576,9 @@ final class RemoteSessionMonitor: ObservableObject {
             Task { await connection.stop() }
             connections.removeValue(forKey: id)
             hostStates[id] = .disconnected
+            hostThreadFilters.removeValue(forKey: id)
+            hostThreadFilterTasks[id]?.cancel()
+            hostThreadFilterTasks.removeValue(forKey: id)
         }
 
         for (id, host) in enabledHosts {
@@ -510,6 +594,7 @@ final class RemoteSessionMonitor: ObservableObject {
                 connections[id] = connection
                 Task { await connection.start() }
             }
+            resolveThreadFilter(for: host)
         }
     }
 
@@ -602,7 +687,8 @@ final class RemoteSessionMonitor: ObservableObject {
 
     private func applyThreadList(hostId: String, remoteThreads: [RemoteAppServerThread]) {
         let host = hosts.first(where: { $0.id == hostId })
-        let groupedThreads = Dictionary(grouping: remoteThreads) { thread in
+        let visibleThreads = remoteThreads.filter { shouldDisplayThread($0, for: host) }
+        let groupedThreads = Dictionary(grouping: visibleThreads) { thread in
             logicalSessionId(
                 sshTarget: host?.sshTarget ?? "",
                 cwd: thread.cwd
@@ -627,6 +713,7 @@ final class RemoteSessionMonitor: ObservableObject {
 
     private func upsertThread(hostId: String, thread: RemoteAppServerThread, replaceHistory: Bool) {
         let host = hosts.first(where: { $0.id == hostId })
+        guard shouldDisplayThread(thread, for: host) else { return }
         let hostName = host?.displayName ?? "Remote Host"
         let connectionState = hostStates[hostId] ?? .disconnected
         let computedHistory = replaceHistory ? historyItems(from: thread.turns) : nil
@@ -1134,6 +1221,10 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
 
     func normalizeCwd(_ cwd: String) async throws -> String? {
         try await normalizeRemoteCwd(cwd)
+    }
+
+    func resolveDisplayCwdFilter(_ cwd: String) async throws -> String? {
+        try await resolveRemoteCwd(cwd, treatHomeAsNilPayload: false)
     }
 
     func startThread(defaultCwd: String) async throws -> RemoteAppServerThread {
@@ -1662,16 +1753,33 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
     }
 
     private func normalizeRemoteCwd(_ cwd: String) async throws -> String? {
+        try await resolveRemoteCwd(cwd, treatHomeAsNilPayload: true)
+    }
+
+    private func resolveRemoteCwd(_ cwd: String, treatHomeAsNilPayload: Bool) async throws -> String? {
         let trimmed = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         if trimmed == "~" {
+            if treatHomeAsNilPayload {
+                await log(
+                    level: .debug,
+                    category: "remote.connection.cwd",
+                    message: "Default CWD '~' resolved to nil payload"
+                )
+                return nil
+            }
+
+            guard let home = try await resolveRemoteHomeDirectory(), !home.isEmpty else {
+                throw RemoteSessionError.invalidConfiguration("Could not resolve remote home directory for `~`")
+            }
             await log(
                 level: .debug,
                 category: "remote.connection.cwd",
-                message: "Default CWD '~' resolved to nil payload"
+                message: "Resolved remote home directory for display filter",
+                payload: "\(trimmed) -> \(home)"
             )
-            return nil
+            return home
         }
 
         if trimmed.hasPrefix("~/") {
