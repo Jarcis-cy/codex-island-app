@@ -138,6 +138,12 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
         "Remote • \(hostName)"
     }
 
+    var sourceDetail: String {
+        let trimmedCwd = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedCwd.isEmpty else { return sourceLabel }
+        return "\(sourceLabel) • \(trimmedCwd)"
+    }
+
     var canStartTurn: Bool {
         pendingApproval == nil && (phase == .idle || phase == .waitingForInput)
     }

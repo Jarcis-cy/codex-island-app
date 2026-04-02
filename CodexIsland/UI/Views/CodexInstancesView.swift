@@ -415,7 +415,7 @@ struct RemoteInstanceRow: View {
                     .foregroundColor(.white)
                     .lineLimit(1)
 
-                Text(thread.sourceLabel)
+                Text(thread.sourceDetail)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.3))
                     .lineLimit(1)

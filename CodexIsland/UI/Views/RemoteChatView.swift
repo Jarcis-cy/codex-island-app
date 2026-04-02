@@ -120,7 +120,7 @@ struct RemoteChatView: View {
                     .foregroundColor(.white.opacity(0.9))
                     .lineLimit(1)
 
-                Text(thread.sourceLabel)
+                Text(thread.sourceDetail)
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.35))
                     .lineLimit(1)
