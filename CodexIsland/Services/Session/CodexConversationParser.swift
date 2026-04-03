@@ -160,6 +160,7 @@ actor CodexConversationParser {
         var toolResults: [String: ConversationParser.ToolResult] = [:]
         var pendingInteractionOrder: [String] = []
         var pendingInteractions: [String: PendingInteraction] = [:]
+        var proposedPlanPendingInteraction: PendingInteraction?
         var transcriptPhase: SessionPhase?
         var runtimeInfo = SessionRuntimeInfo.empty
 
@@ -193,12 +194,13 @@ actor CodexConversationParser {
                     toolResults: &toolResults,
                     pendingInteractionOrder: &pendingInteractionOrder,
                     pendingInteractions: &pendingInteractions,
+                    proposedPlanPendingInteraction: &proposedPlanPendingInteraction,
                     transcriptPhase: &transcriptPhase
                 )
             case "event_msg":
                 guard let payload = json["payload"] as? [String: Any],
                       let eventType = payload["type"] as? String,
-                      let eventPayload = payload["payload"] as? [String: Any] else {
+                      let eventPayload = eventPayload(from: payload) else {
                     continue
                 }
                 updateRuntimeInfo(&runtimeInfo, eventType: eventType, payload: eventPayload)
@@ -209,6 +211,7 @@ actor CodexConversationParser {
                     toolResults: &toolResults,
                     pendingInteractionOrder: &pendingInteractionOrder,
                     pendingInteractions: &pendingInteractions,
+                    proposedPlanPendingInteraction: &proposedPlanPendingInteraction,
                     transcriptPhase: &transcriptPhase
                 )
             default:
@@ -217,7 +220,12 @@ actor CodexConversationParser {
         }
 
         messages.sort { $0.timestamp < $1.timestamp }
-        let orderedPendingInteractions = pendingInteractionOrder.compactMap { pendingInteractions[$0] }
+        let orderedPendingInteractions: [PendingInteraction]
+        if pendingInteractionOrder.isEmpty, let proposedPlanPendingInteraction {
+            orderedPendingInteractions = [proposedPlanPendingInteraction]
+        } else {
+            orderedPendingInteractions = pendingInteractionOrder.compactMap { pendingInteractions[$0] }
+        }
         let conversationInfo = buildConversationInfo(
             messages: messages,
             pendingInteractions: orderedPendingInteractions
@@ -245,6 +253,16 @@ actor CodexConversationParser {
            !modelProvider.isEmpty {
             runtimeInfo.modelProvider = modelProvider
         }
+    }
+
+    private func eventPayload(from payload: [String: Any]) -> [String: Any]? {
+        if let nested = payload["payload"] as? [String: Any] {
+            return nested
+        }
+
+        var flattened = payload
+        flattened.removeValue(forKey: "type")
+        return flattened
     }
 
     private func updateRuntimeInfo(_ runtimeInfo: inout SessionRuntimeInfo, turnContextPayload: [String: Any]) {
@@ -338,6 +356,7 @@ actor CodexConversationParser {
         toolResults: inout [String: ConversationParser.ToolResult],
         pendingInteractionOrder: inout [String],
         pendingInteractions: inout [String: PendingInteraction],
+        proposedPlanPendingInteraction: inout PendingInteraction?,
         transcriptPhase: inout SessionPhase?
     ) {
         guard let payloadType = payload["type"] as? String else { return }
@@ -348,7 +367,8 @@ actor CodexConversationParser {
             guard rawRole != "developer", rawRole != "system" else { return }
 
             let role = rawRole.flatMap(ChatRole.init(rawValue:)) ?? .assistant
-            let blocks = parseMessageBlocks(payload["content"] as? [[String: Any]]).filter { block in
+            let parsedContent = parseMessageContent(payload["content"] as? [[String: Any]])
+            let blocks = parsedContent.blocks.filter { block in
                 guard case .text(let text) = block else { return true }
                 return !isCodexInjectedText(text)
             }
@@ -359,6 +379,10 @@ actor CodexConversationParser {
                 timestamp: timestamp,
                 content: blocks
             ))
+            if role == .assistant, parsedContent.containsProposedPlan {
+                proposedPlanPendingInteraction = .userInput(makeProposedPlanFollowupInteraction(lineIndex: lineIndex))
+                transcriptPhase = .waitingForInput
+            }
 
         case "reasoning":
             let text = parseReasoningText(payload)
@@ -512,12 +536,14 @@ actor CodexConversationParser {
         toolResults: inout [String: ConversationParser.ToolResult],
         pendingInteractionOrder: inout [String],
         pendingInteractions: inout [String: PendingInteraction],
+        proposedPlanPendingInteraction: inout PendingInteraction?,
         transcriptPhase: inout SessionPhase?
     ) {
         switch eventType {
         case "task_started":
             pendingInteractions.removeAll()
             pendingInteractionOrder.removeAll()
+            proposedPlanPendingInteraction = nil
             transcriptPhase = .processing
 
         case "exec_command_end":
@@ -577,6 +603,7 @@ actor CodexConversationParser {
         case "turn_aborted":
             pendingInteractions.removeAll()
             pendingInteractionOrder.removeAll()
+            proposedPlanPendingInteraction = nil
             transcriptPhase = .waitingForInput
 
         default:
@@ -658,18 +685,64 @@ actor CodexConversationParser {
         )
     }
 
-    private func parseMessageBlocks(_ content: [[String: Any]]?) -> [MessageBlock] {
-        guard let content else { return [] }
-        return content.compactMap { item in
+    private func parseMessageContent(_ content: [[String: Any]]?) -> (blocks: [MessageBlock], containsProposedPlan: Bool) {
+        guard let content else { return ([], false) }
+        var containsProposedPlan = false
+        let blocks = content.compactMap { item -> MessageBlock? in
             guard let type = item["type"] as? String else { return nil }
             switch type {
             case "input_text", "output_text":
-                guard let text = item["text"] as? String, !text.isEmpty else { return nil }
-                return .text(text)
+                guard let text = item["text"] as? String else { return nil }
+                let normalized = normalizeMessageText(text)
+                containsProposedPlan = containsProposedPlan || normalized.containsProposedPlan
+                guard !normalized.text.isEmpty else { return nil }
+                return .text(normalized.text)
             default:
                 return nil
             }
         }
+        return (blocks, containsProposedPlan)
+    }
+
+    private func normalizeMessageText(_ text: String) -> (text: String, containsProposedPlan: Bool) {
+        let containsProposedPlan = text.contains("<proposed_plan>") || text.contains("</proposed_plan>")
+        guard containsProposedPlan else {
+            return (text, false)
+        }
+
+        let normalized = text
+            .replacingOccurrences(of: "<proposed_plan>", with: "")
+            .replacingOccurrences(of: "</proposed_plan>", with: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return (normalized, true)
+    }
+
+    private func makeProposedPlanFollowupInteraction(lineIndex: Int) -> PendingUserInputInteraction {
+        PendingUserInputInteraction(
+            id: "plan-followup-\(lineIndex)",
+            title: "Codex needs your input",
+            questions: [
+                PendingInteractionQuestion(
+                    id: "plan_mode_followup",
+                    header: "Next step",
+                    question: "Implement this plan?",
+                    options: [
+                        PendingInteractionOption(
+                            label: "Yes, implement this plan",
+                            description: "Switch to Default and start coding."
+                        ),
+                        PendingInteractionOption(
+                            label: "No, stay in Plan mode",
+                            description: "Continue planning with the model."
+                        )
+                    ],
+                    isOther: false,
+                    isSecret: false
+                )
+            ],
+            transport: .codexLocal(callId: nil, turnId: nil)
+        )
     }
 
     private func isCodexInjectedText(_ text: String) -> Bool {

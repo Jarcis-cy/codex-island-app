@@ -231,7 +231,7 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testLocalTranscriptPendingInteractionFallsBackWhenAppServerThreadHasNoInteraction() async throws {
+    func testLocalTranscriptPendingInteractionUsesInlineFallbackWhenAppServerThreadHasNoInteraction() async throws {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(
             id: "local-app-server",
@@ -298,12 +298,98 @@ final class PendingInteractionTests: XCTestCase {
         let session = try XCTUnwrap(sessionMonitor.instances.first(where: { $0.sessionId == "session-1" }))
         XCTAssertEqual(session.pendingInteractions.first?.id, "local-transcript-request")
         XCTAssertEqual(sessionMonitor.pendingInteraction(for: session)?.id, "local-transcript-request")
-        XCTAssertFalse(
+        XCTAssertTrue(
             sessionMonitor.canRespondInline(
                 to: session,
                 interaction: try XCTUnwrap(sessionMonitor.pendingInteraction(for: session))
             )
         )
+    }
+
+    @MainActor
+    func testLocalTranscriptPendingInteractionCanRespondInlineViaAppServerThread() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        let sentText = LockedBox<String?>(nil)
+        connection.sendMessageHandler = { _, text, _, _ in
+            await sentText.set(text)
+        }
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        localMonitor.apply(event: .threadUpsert(
+            hostId: host.id,
+            thread: makeThread(id: "session-1", status: .idle)
+        ))
+        await SessionStore.shared.process(.fileUpdated(FileUpdatePayload(
+            sessionId: "session-1",
+            cwd: "/tmp/project",
+            messages: [],
+            isIncremental: true,
+            completedToolIds: [],
+            toolResults: [:],
+            structuredResults: [:],
+            pendingInteractions: [
+                .userInput(PendingUserInputInteraction(
+                    id: "local-transcript-request",
+                    title: "Codex needs your input",
+                    questions: [
+                        PendingInteractionQuestion(
+                            id: "next_step",
+                            header: "Next step",
+                            question: "Implement this plan?",
+                            options: [
+                                PendingInteractionOption(label: "Yes, implement this plan (Recommended)", description: nil),
+                                PendingInteractionOption(label: "No, stay in Plan mode", description: nil)
+                            ],
+                            isOther: false,
+                            isSecret: false
+                        )
+                    ],
+                    transport: .codexLocal(callId: "local-transcript-request", turnId: "turn-1")
+                ))
+            ],
+            transcriptPhase: .waitingForInput
+        )))
+        await Task.yield()
+
+        let session = try XCTUnwrap(sessionMonitor.instances.first(where: { $0.sessionId == "session-1" }))
+        let interaction = try XCTUnwrap(sessionMonitor.pendingInteraction(for: session))
+        XCTAssertTrue(sessionMonitor.canRespondInline(to: session, interaction: interaction))
+
+        let success = await sessionMonitor.respond(
+            sessionId: session.sessionId,
+            answers: PendingInteractionAnswerPayload(
+                answers: ["next_step": ["Yes, implement this plan (Recommended)"]]
+            )
+        )
+
+        XCTAssertTrue(success)
+        let capturedText = await sentText.get()
+        XCTAssertEqual(capturedText, "Yes, implement this plan")
     }
 
     @MainActor
@@ -404,8 +490,6 @@ final class PendingInteractionTests: XCTestCase {
             ]
         ))
         await Task.yield()
-
-        XCTAssertNil(sessionMonitor.localAppServerThreads[hiddenThreadId])
 
         let success = await sessionMonitor.sendMessage(sessionId: hiddenThreadId, text: "use raw thread")
         let capturedThreadId = await sentThreadId.get()

@@ -195,7 +195,14 @@ class CodexSessionMonitor: ObservableObject {
                 return false
             }
         case .codexLocal:
-            return false
+            guard let text = inlineReplyText(for: answers) else { return false }
+            guard let thread = await ensureAppServerThread(for: session) else { return false }
+            do {
+                try await localAppServerMonitor.sendMessage(thread: thread, text: text)
+                return true
+            } catch {
+                return false
+            }
         case .hookPermission:
             return false
         }
@@ -232,7 +239,7 @@ class CodexSessionMonitor: ObservableObject {
         case .remoteAppServer:
             return true
         case .codexLocal:
-            return false
+            return canSendMessage(to: session)
         case .hookPermission:
             return false
         }
@@ -635,6 +642,15 @@ class CodexSessionMonitor: ObservableObject {
         }
 
         return matches.mapValues(\.session)
+    }
+
+    private func inlineReplyText(for answers: PendingInteractionAnswerPayload) -> String? {
+        let value = answers.answers.values
+            .flatMap { $0 }
+            .first { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        guard let value else { return nil }
+        return value.replacingOccurrences(of: " (Recommended)", with: "")
     }
 
     private func localMetadataSession(

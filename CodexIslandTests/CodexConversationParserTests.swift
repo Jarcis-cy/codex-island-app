@@ -119,6 +119,59 @@ final class CodexConversationParserTests: XCTestCase {
         XCTAssertTrue(interactions.isEmpty)
     }
 
+    func testProposedPlanBlockSynthesizesFollowupInteraction() async throws {
+        let transcript = #"""
+        {"timestamp":"2026-04-03T09:17:29Z","type":"turn_context","payload":{"turn_id":"turn-1","collaboration_mode":{"mode":"plan","settings":{"model":"gpt-5.4","reasoning_effort":"high"}}}}
+        {"timestamp":"2026-04-03T09:17:29Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","model_context_window":950000,"collaboration_mode_kind":"plan"}}
+        {"timestamp":"2026-04-03T09:17:30Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"<proposed_plan>\n# 平台化供应商密钥管理\n\n- 这里只是计划正文。\n</proposed_plan>"}]}}
+        {"timestamp":"2026-04-03T09:17:31Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}
+        """#
+
+        let url = try makeTranscriptFile(contents: transcript)
+
+        let interactions = await CodexConversationParser.shared.pendingInteractions(
+            sessionId: UUID().uuidString,
+            transcriptPath: url.path
+        )
+        let messages = await CodexConversationParser.shared.parseFullConversation(
+            sessionId: UUID().uuidString,
+            transcriptPath: url.path
+        )
+
+        guard case .userInput(let interaction)? = interactions.first else {
+            return XCTFail("Expected synthetic plan follow-up interaction")
+        }
+
+        XCTAssertEqual(interaction.questions.first?.question, "Implement this plan?")
+        XCTAssertEqual(interaction.questions.first?.options.map(\.label), [
+            "Yes, implement this plan",
+            "No, stay in Plan mode"
+        ])
+        XCTAssertFalse(messages.first?.textContent.contains("<proposed_plan>") ?? true)
+        XCTAssertFalse(messages.first?.textContent.contains("</proposed_plan>") ?? true)
+    }
+
+    func testPendingUserInputParsesFlatEventMsgFormat() async throws {
+        let transcript = #"""
+        {"timestamp":"2026-04-03T08:43:40Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","model_context_window":950000,"collaboration_mode_kind":"plan"}}
+        {"timestamp":"2026-04-03T08:44:11Z","type":"event_msg","payload":{"type":"request_user_input","call_id":"call_exit_plan_followup","turn_id":"turn-1","questions":[{"header":"下一步","id":"next_step","question":"要执行这份报告，还是继续留在 Plan 模式里提问？","options":[{"label":"执行这份报告 (Recommended)","description":"退出 Plan 模式并按这份方案继续。"},{"label":"继续在 Plan 模式提问","description":"保留当前 Plan 模式，继续补充澄清问题。"}]}]}}
+        """#
+
+        let url = try makeTranscriptFile(contents: transcript)
+
+        let interactions = await CodexConversationParser.shared.pendingInteractions(
+            sessionId: UUID().uuidString,
+            transcriptPath: url.path
+        )
+
+        guard case .userInput(let interaction)? = interactions.first else {
+            return XCTFail("Expected user input interaction")
+        }
+
+        XCTAssertEqual(interaction.id, "call_exit_plan_followup")
+        XCTAssertEqual(interaction.questions.first?.question, "要执行这份报告，还是继续留在 Plan 模式里提问？")
+    }
+
     private func makeTranscriptFile(contents: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
