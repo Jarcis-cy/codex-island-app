@@ -9,8 +9,48 @@
 
 import AppKit
 
+private enum NotchMouseButton: Hashable {
+    case left
+    case right
+}
+
+struct NotchMousePassThroughState {
+    private var capturedButtons: Set<NotchMouseButton> = []
+
+    mutating func shouldPassThrough(eventType: NSEvent.EventType, hasHitTarget: Bool) -> Bool {
+        switch eventType {
+        case .leftMouseDown:
+            if hasHitTarget {
+                capturedButtons.insert(.left)
+                return false
+            }
+            return true
+
+        case .leftMouseUp:
+            let captured = capturedButtons.remove(.left) != nil
+            return !captured && !hasHitTarget
+
+        case .rightMouseDown:
+            if hasHitTarget {
+                capturedButtons.insert(.right)
+                return false
+            }
+            return true
+
+        case .rightMouseUp:
+            let captured = capturedButtons.remove(.right) != nil
+            return !captured && !hasHitTarget
+
+        default:
+            return false
+        }
+    }
+}
+
 // Use NSPanel subclass for non-activating behavior
 class NotchPanel: NSPanel {
+    private var mousePassThroughState = NotchMousePassThroughState()
+
     override init(
         contentRect: NSRect,
         styleMask style: NSWindow.StyleMask,
@@ -73,9 +113,18 @@ class NotchPanel: NSPanel {
             // Get the location in window coordinates
             let locationInWindow = event.locationInWindow
 
-            // Check if any view wants to handle this event
-            if let contentView = self.contentView,
-               contentView.hitTest(locationInWindow) == nil {
+            let hasHitTarget = if let contentView = self.contentView {
+                contentView.hitTest(locationInWindow) != nil
+            } else {
+                false
+            }
+
+            // Once a press starts inside the panel, keep the full click gesture inside
+            // the panel even if SwiftUI re-renders before mouse-up.
+            if mousePassThroughState.shouldPassThrough(
+                eventType: event.type,
+                hasHitTarget: hasHitTarget
+            ) {
                 // No view wants this event - pass it through to windows behind
                 // by temporarily ignoring mouse events and re-posting
                 let screenLocation = convertPoint(toScreen: locationInWindow)

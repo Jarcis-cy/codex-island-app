@@ -137,6 +137,28 @@ final class NotchViewModelTests: XCTestCase {
         )
     }
 
+    func testMouseUpDoesNotPassThroughAfterInsideClickStarts() {
+        var state = NotchMousePassThroughState()
+
+        XCTAssertFalse(state.shouldPassThrough(eventType: .leftMouseDown, hasHitTarget: true))
+        XCTAssertFalse(state.shouldPassThrough(eventType: .leftMouseUp, hasHitTarget: false))
+    }
+
+    func testOutsideClickStillPassesThroughWhenNeverCaptured() {
+        var state = NotchMousePassThroughState()
+
+        XCTAssertTrue(state.shouldPassThrough(eventType: .leftMouseDown, hasHitTarget: false))
+        XCTAssertTrue(state.shouldPassThrough(eventType: .leftMouseUp, hasHitTarget: false))
+    }
+
+    func testCaptureIsClearedAfterMouseUp() {
+        var state = NotchMousePassThroughState()
+
+        XCTAssertFalse(state.shouldPassThrough(eventType: .leftMouseDown, hasHitTarget: true))
+        XCTAssertFalse(state.shouldPassThrough(eventType: .leftMouseUp, hasHitTarget: false))
+        XCTAssertTrue(state.shouldPassThrough(eventType: .leftMouseUp, hasHitTarget: false))
+    }
+
     private func makeViewModel(hoverCloseDelay: TimeInterval = 2.0) -> NotchViewModel {
         NotchViewModel(
             deviceNotchRect: CGRect(x: 0, y: 0, width: 200, height: 32),
