@@ -44,20 +44,60 @@ struct SessionPhaseSummary: Equatable {
     var totalCount: Int {
         runningCount + waitingCount + idleCount
     }
+
+    init(localSessions: [SessionState], remoteThreads: [RemoteThreadState]) {
+        var runningCount = 0
+        var waitingCount = 0
+        var idleCount = 0
+
+        for session in localSessions {
+            switch SessionPhaseHelpers.summaryBucket(for: session.phase, pendingInteraction: session.primaryPendingInteraction) {
+            case .running:
+                runningCount += 1
+            case .waiting:
+                waitingCount += 1
+            case .idle:
+                idleCount += 1
+            case nil:
+                continue
+            }
+        }
+
+        for thread in remoteThreads {
+            switch SessionPhaseHelpers.summaryBucket(for: thread.phase, pendingInteraction: thread.primaryPendingInteraction) {
+            case .running:
+                runningCount += 1
+            case .waiting:
+                waitingCount += 1
+            case .idle:
+                idleCount += 1
+            case nil:
+                continue
+            }
+        }
+
+        self.runningCount = runningCount
+        self.waitingCount = waitingCount
+        self.idleCount = idleCount
+    }
 }
 
 struct SessionPhaseHelpers {
-    static func summaryBucket(for phase: SessionPhase) -> SessionSummaryBucket? {
-        switch phase {
-        case .processing, .compacting:
-            return .running
-        case .waitingForApproval, .waitingForInput:
-            return .waiting
-        case .idle:
-            return .idle
-        case .ended:
+    static func summaryBucket(for phase: SessionPhase, pendingInteraction: PendingInteraction?) -> SessionSummaryBucket? {
+        if phase == .ended {
             return nil
         }
+        if phase == .processing || phase == .compacting {
+            return .running
+        }
+        if pendingInteraction != nil || phase.isWaitingForApproval {
+            return .waiting
+        }
+        return .idle
+    }
+
+    static func summaryBucket(for phase: SessionPhase) -> SessionSummaryBucket? {
+        summaryBucket(for: phase, pendingInteraction: nil)
     }
 
     /// Get color for session phase

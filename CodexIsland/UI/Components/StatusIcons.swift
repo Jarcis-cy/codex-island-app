@@ -12,7 +12,7 @@ struct WaitingForInputIcon: View {
     let size: CGFloat
     let color: Color
 
-    init(size: CGFloat = 12, color: Color = TerminalColors.amber) {
+    init(size: CGFloat = 12, color: Color = TerminalColors.green) {
         self.size = size
         self.color = color
     }

@@ -62,18 +62,50 @@ final class NotchViewModelTests: XCTestCase {
         ])
 
         XCTAssertEqual(summary.runningCount, 2)
-        XCTAssertEqual(summary.waitingCount, 2)
-        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.waitingCount, 1)
+        XCTAssertEqual(summary.idleCount, 2)
         XCTAssertEqual(summary.totalCount, 5)
     }
 
     func testSummaryBucketMappingMatchesCollapsedStateRules() {
         XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .processing), .running)
         XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .compacting), .running)
-        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .waitingForInput), .waiting)
+        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .waitingForInput), .idle)
         XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .waitingForApproval(makePermissionContext())), .waiting)
         XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .idle), .idle)
         XCTAssertNil(SessionPhaseHelpers.summaryBucket(for: .ended))
+    }
+
+    func testSummaryBucketTreatsPendingUserInputAsWaiting() {
+        let pendingInteraction = PendingInteraction.userInput(
+            PendingUserInputInteraction(
+                id: "request-1",
+                title: "Plan confirmation",
+                questions: [
+                    PendingInteractionQuestion(
+                        id: "execute",
+                        header: "Execute",
+                        question: "Do you want me to execute this plan?",
+                        options: [
+                            PendingInteractionOption(label: "Yes", description: nil),
+                            PendingInteractionOption(label: "No", description: nil)
+                        ],
+                        isOther: false,
+                        isSecret: false
+                    )
+                ],
+                transport: .codexLocal(callId: nil, turnId: nil)
+            )
+        )
+
+        XCTAssertEqual(
+            SessionPhaseHelpers.summaryBucket(for: .waitingForInput, pendingInteraction: pendingInteraction),
+            .waiting
+        )
+        XCTAssertEqual(
+            SessionPhaseHelpers.summaryBucket(for: .idle, pendingInteraction: pendingInteraction),
+            .waiting
+        )
     }
 
     private func makeViewModel(hoverCloseDelay: TimeInterval = 2.0) -> NotchViewModel {

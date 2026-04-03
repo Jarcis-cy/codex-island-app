@@ -353,9 +353,15 @@ struct InstanceRow: View {
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
         case .waitingForInput:
-            Circle()
-                .fill(SessionPhaseHelpers.phaseColor(for: session.phase))
-                .frame(width: 6, height: 6)
+            if hasPendingInteraction {
+                Text("!")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(TerminalColors.amber)
+            } else {
+                Circle()
+                    .fill(SessionPhaseHelpers.phaseColor(for: session.phase))
+                    .frame(width: 6, height: 6)
+            }
         case .idle:
             if hasPendingInteraction {
                 Text("!")
@@ -515,9 +521,15 @@ struct RemoteInstanceRow: View {
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
         case .waitingForInput:
-            Circle()
-                .fill(SessionPhaseHelpers.phaseColor(for: thread.phase))
-                .frame(width: 6, height: 6)
+            if hasPendingInteraction {
+                Text("!")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(TerminalColors.amber)
+            } else {
+                Circle()
+                    .fill(SessionPhaseHelpers.phaseColor(for: thread.phase))
+                    .frame(width: 6, height: 6)
+            }
         case .idle:
             if hasPendingInteraction {
                 Text("!")

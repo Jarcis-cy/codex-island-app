@@ -30,7 +30,10 @@ struct NotchView: View {
     @Namespace private var activityNamespace
 
     private var collapsedSummary: SessionPhaseSummary {
-        SessionPhaseSummary(phases: allPhases)
+        SessionPhaseSummary(
+            localSessions: sessionMonitor.instances,
+            remoteThreads: remoteSessionMonitor.threads
+        )
     }
 
     private var hasVisibleSessions: Bool {
@@ -70,6 +73,15 @@ struct NotchView: View {
         }
     }
 
+    private var collapsedSummaryExtensionWidth: CGFloat {
+        guard showsCollapsedSummary else { return 0 }
+        return ClosedStatusSummaryView.preferredWidth + 18
+    }
+
+    private var collapsedHeaderWidth: CGFloat {
+        closedNotchSize.width + collapsedSummaryExtensionWidth
+    }
+
     // MARK: - Corner Radii
 
     private var topCornerRadius: CGFloat {
@@ -99,53 +111,8 @@ struct NotchView: View {
 
     var body: some View {
         ZStack(alignment: .top) {
-            // Outer container does NOT receive hits - only the notch content does
             VStack(spacing: 0) {
-                notchLayout
-                    .frame(
-                        maxWidth: viewModel.status == .opened ? notchSize.width : nil,
-                        alignment: .top
-                    )
-                    .padding(
-                        .horizontal,
-                        viewModel.status == .opened
-                            ? cornerRadiusInsets.opened.top
-                            : cornerRadiusInsets.closed.bottom
-                    )
-                    .padding([.horizontal, .bottom], viewModel.status == .opened ? 12 : 0)
-                    .background(.black)
-                    .clipShape(currentNotchShape)
-                    .overlay(alignment: .top) {
-                        Rectangle()
-                            .fill(.black)
-                            .frame(height: 1)
-                            .padding(.horizontal, topCornerRadius)
-                    }
-                    .shadow(
-                        color: (viewModel.status == .opened || isHovering) ? .black.opacity(0.7) : .clear,
-                        radius: 6
-                    )
-                    .frame(
-                        maxWidth: viewModel.status == .opened ? notchSize.width : nil,
-                        maxHeight: viewModel.status == .opened ? notchSize.height : nil,
-                        alignment: .top
-                    )
-                    .animation(viewModel.status == .opened ? openAnimation : closeAnimation, value: viewModel.status)
-                    .animation(openAnimation, value: notchSize) // Animate container size changes between content types
-                    .animation(.smooth, value: activityCoordinator.expandingActivity)
-                    .animation(.smooth, value: collapsedSummary)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isBouncing)
-                    .contentShape(Rectangle())
-                    .onHover { hovering in
-                        withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
-                            isHovering = hovering
-                        }
-                    }
-                    .onTapGesture {
-                        if viewModel.status != .opened {
-                            viewModel.notchOpen(reason: .click)
-                        }
-                    }
+                notchContainer
             }
         }
         .opacity(isVisible ? 1 : 0)
@@ -174,6 +141,50 @@ struct NotchView: View {
             handleRemotePendingChange(threads)
             handleRemoteWaitingForInputChange(threads)
         }
+    }
+
+    @ViewBuilder
+    private var notchContainer: some View {
+        let isOpened = viewModel.status == .opened
+        let panelWidth = isOpened ? nil : collapsedHeaderWidth
+        let maxPanelWidth = isOpened ? notchSize.width : nil
+        let panelHorizontalPadding = isOpened ? cornerRadiusInsets.opened.top : cornerRadiusInsets.closed.bottom
+        let panelBottomPadding: CGFloat = isOpened ? 12 : 0
+        let panelShadowColor = (isOpened || isHovering) ? Color.black.opacity(0.7) : .clear
+        let panelMaxHeight = isOpened ? notchSize.height : nil
+
+        notchLayout
+            .frame(width: panelWidth, alignment: .top)
+            .frame(maxWidth: maxPanelWidth, alignment: .top)
+            .padding(.horizontal, panelHorizontalPadding)
+            .padding([.horizontal, .bottom], panelBottomPadding)
+            .background(.black)
+            .clipShape(currentNotchShape)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(.black)
+                    .frame(height: 1)
+                    .padding(.horizontal, topCornerRadius)
+            }
+            .shadow(color: panelShadowColor, radius: 6)
+            .frame(width: panelWidth, alignment: .top)
+            .frame(maxWidth: maxPanelWidth, maxHeight: panelMaxHeight, alignment: .top)
+            .animation(isOpened ? openAnimation : closeAnimation, value: viewModel.status)
+            .animation(openAnimation, value: notchSize)
+            .animation(.smooth, value: activityCoordinator.expandingActivity)
+            .animation(.smooth, value: collapsedSummary)
+            .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isBouncing)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                    isHovering = hovering
+                }
+            }
+            .onTapGesture {
+                if viewModel.status != .opened {
+                    viewModel.notchOpen(reason: .click)
+                }
+            }
     }
 
     // MARK: - Notch Layout
@@ -215,21 +226,21 @@ struct NotchView: View {
     @ViewBuilder
     private var headerRow: some View {
         HStack(spacing: 0) {
-            if showsCollapsedSummary {
-                CodexCrabIcon(size: 14, animateLegs: isProcessing)
-                    .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showsCollapsedSummary)
-                    .frame(width: sideWidth + 6)
-            }
-
             if viewModel.status == .opened {
                 openedHeaderContent
             } else if showsCollapsedSummary {
-                Rectangle()
-                    .fill(.black)
-                    .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0))
+                ZStack(alignment: .leading) {
+                    Rectangle()
+                        .fill(.black)
+                        .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0))
+
+                    CodexCrabIcon(size: 14, animateLegs: isProcessing)
+                        .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showsCollapsedSummary)
+                        .padding(.leading, 10)
+                }
 
                 ClosedStatusSummaryView(summary: collapsedSummary)
-                    .padding(.trailing, 2)
+                    .frame(width: collapsedSummaryExtensionWidth, alignment: .center)
             } else {
                 Rectangle()
                     .fill(.clear)
@@ -237,10 +248,6 @@ struct NotchView: View {
             }
         }
         .frame(height: closedNotchSize.height)
-    }
-
-    private var sideWidth: CGFloat {
-        max(0, closedNotchSize.height - 12) + 10
     }
 
     // MARK: - Opened Header Content
