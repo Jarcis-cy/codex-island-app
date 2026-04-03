@@ -222,9 +222,17 @@ struct ChatView: View {
         .animation(nil, value: viewModel.status)
         .task(id: session.sessionId) {
             await sessionMonitor.prepareAppServerThread(session: session)
+            if applyPreferredHistory(from: latestSession() ?? session) {
+                return
+            }
             await ensureHistoryLoaded(for: session)
         }
         .onReceive(ChatHistoryManager.shared.$histories) { histories in
+            if sessionMonitor.prefersAppServerHistory(for: session) {
+                _ = applyPreferredHistory(from: latestSession() ?? session)
+                return
+            }
+
             // Update when count changes, last item differs, or content changes (e.g., tool status)
             if let newHistory = histories[logicalSessionId] {
                 let countChanged = newHistory.count != history.count
@@ -269,6 +277,10 @@ struct ChatView: View {
                 let hadPendingInteraction = hasPendingInteraction
                 session = updated
                 let isNowProcessing = updated.phase == .processing
+
+                if applyPreferredHistory(from: updated) {
+                    return
+                }
 
                 if hadPendingInteraction && updated.primaryPendingInteraction == nil && isNowProcessing {
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -1010,6 +1022,10 @@ struct ChatView: View {
 
     @MainActor
     private func ensureHistoryLoaded(for session: SessionState) async {
+        if applyPreferredHistory(from: session) {
+            return
+        }
+
         if ChatHistoryManager.shared.isLoaded(logicalSessionId: logicalSessionId, sessionId: session.sessionId) {
             history = ChatHistoryManager.shared.history(for: logicalSessionId)
             isLoading = false
@@ -1035,6 +1051,35 @@ struct ChatView: View {
         withAnimation(.easeOut(duration: 0.2)) {
             isLoading = !hasResolvedInitialState
         }
+    }
+
+    @MainActor
+    @discardableResult
+    private func applyPreferredHistory(from session: SessionState) -> Bool {
+        guard let preferredHistory = sessionMonitor.preferredHistory(for: session) else {
+            return false
+        }
+
+        let countChanged = preferredHistory.count != history.count
+        if preferredHistory != history {
+            if isAutoscrollPaused && preferredHistory.count > previousHistoryCount {
+                let addedCount = preferredHistory.count - previousHistoryCount
+                newMessageCount += addedCount
+                previousHistoryCount = preferredHistory.count
+            }
+
+            history = preferredHistory
+
+            if !isAutoscrollPaused && countChanged {
+                shouldScrollToBottom = true
+            }
+        }
+
+        if isLoading {
+            isLoading = false
+        }
+
+        return true
     }
 
     @MainActor

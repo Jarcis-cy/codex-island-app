@@ -431,6 +431,122 @@ final class PendingInteractionTests: XCTestCase {
         XCTAssertEqual(modes.last?.reasoningEffort, .high)
     }
 
+    @MainActor
+    func testLocalSessionSummaryPrefersAppServerHistory() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        let historyThread = makeThread(
+            id: "session-1",
+            status: .idle,
+            turns: [
+                makeTurn(
+                    items: [
+                        .userMessage(id: "user-1", content: [.text("hello from app server")]),
+                        .agentMessage(id: "assistant-1", text: "app server reply")
+                    ],
+                    status: .completed
+                )
+            ]
+        )
+
+        localMonitor.apply(event: .threadUpsert(hostId: host.id, thread: historyThread))
+        await Task.yield()
+
+        guard let session = sessionMonitor.instances.first(where: { $0.sessionId == "session-1" }) else {
+            return XCTFail("Expected local session")
+        }
+
+        XCTAssertEqual(session.lastMessage, "app server reply")
+        XCTAssertEqual(session.lastMessageRole, "assistant")
+        XCTAssertEqual(session.firstUserMessage, "hello from app server")
+        XCTAssertEqual(session.chatItems.count, 2)
+    }
+
+    @MainActor
+    func testLocalPreferredHistoryComesFromAppServerThread() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        let historyThread = makeThread(
+            id: "session-1",
+            status: .idle,
+            turns: [
+                makeTurn(
+                    items: [
+                        .userMessage(id: "user-1", content: [.text("pick app-server history")]),
+                        .agentMessage(id: "assistant-1", text: "history ready")
+                    ],
+                    status: .completed
+                )
+            ]
+        )
+
+        localMonitor.apply(event: .threadUpsert(hostId: host.id, thread: historyThread))
+        await Task.yield()
+
+        guard let session = sessionMonitor.instances.first(where: { $0.sessionId == "session-1" }) else {
+            return XCTFail("Expected local session")
+        }
+
+        let preferredHistory = sessionMonitor.preferredHistory(for: session)
+
+        XCTAssertTrue(sessionMonitor.prefersAppServerHistory(for: session))
+        XCTAssertEqual(preferredHistory?.count, 2)
+        guard case .assistant(let reply)? = preferredHistory?.last?.type else {
+            return XCTFail("Expected assistant reply from app-server history")
+        }
+        XCTAssertEqual(reply, "history ready")
+    }
+
     private func makeInteraction(questions: [PendingInteractionQuestion]) -> PendingUserInputInteraction {
         PendingUserInputInteraction(
             id: "call-1",

@@ -265,6 +265,20 @@ class CodexSessionMonitor: ObservableObject {
         }
     }
 
+    func preferredHistory(for session: SessionState) -> [ChatHistoryItem]? {
+        guard session.provider == .codex,
+              let thread = localAppServerThreads[session.sessionId],
+              shouldPreferAppServerHistory(thread) else {
+            return nil
+        }
+
+        return thread.history
+    }
+
+    func prefersAppServerHistory(for session: SessionState) -> Bool {
+        preferredHistory(for: session) != nil
+    }
+
     func prepareAppServerThread(session: SessionState) async {
         guard session.provider == .codex else { return }
         _ = await ensureAppServerThread(for: session)
@@ -381,6 +395,14 @@ class CodexSessionMonitor: ObservableObject {
         var merged = session
         merged.pendingInteractions = thread.primaryPendingInteraction.map { [$0] } ?? []
 
+        if shouldPreferAppServerHistory(thread) {
+            merged.chatItems = thread.history
+            merged.conversationInfo = overlayConversationInfo(
+                session.conversationInfo,
+                with: thread
+            )
+        }
+
         if thread.isLoaded || thread.phase.isActive || thread.needsAttention {
             merged.phase = thread.phase
         }
@@ -394,6 +416,44 @@ class CodexSessionMonitor: ObservableObject {
             merged.runtimeInfo.tokenUsage = tokenUsage
         }
         return merged
+    }
+
+    private func shouldPreferAppServerHistory(_ thread: RemoteThreadState) -> Bool {
+        thread.isLoaded || !thread.history.isEmpty
+    }
+
+    private func overlayConversationInfo(
+        _ base: ConversationInfo,
+        with thread: RemoteThreadState
+    ) -> ConversationInfo {
+        let firstUserMessage = base.firstUserMessage ?? thread.history.first(where: { item in
+            if case .user = item.type {
+                return true
+            }
+            return false
+        }).flatMap { item in
+            if case .user(let text) = item.type {
+                return text
+            }
+            return nil
+        }
+
+        let summaryFallback: String?
+        if let name = thread.name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty {
+            summaryFallback = name
+        } else {
+            let preview = thread.preview.trimmingCharacters(in: .whitespacesAndNewlines)
+            summaryFallback = preview.isEmpty ? nil : preview
+        }
+
+        return ConversationInfo(
+            summary: base.summary ?? summaryFallback,
+            lastMessage: thread.lastMessage ?? base.lastMessage,
+            lastMessageRole: thread.lastMessageRole ?? base.lastMessageRole,
+            lastToolName: thread.lastToolName ?? base.lastToolName,
+            firstUserMessage: firstUserMessage,
+            lastUserMessageDate: thread.lastUserMessageDate ?? base.lastUserMessageDate
+        )
     }
 
     private func ensureAppServerThread(for session: SessionState) async -> RemoteThreadState? {
