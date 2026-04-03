@@ -359,7 +359,12 @@ class CodexSessionMonitor: ObservableObject {
 
     private func ensureAppServerThread(for session: SessionState) async -> RemoteThreadState? {
         guard session.provider == .codex else { return nil }
-        if let thread = localAppServerThreads[session.sessionId] {
+        let candidateThreadIDs = appServerCandidateThreadIDs(for: session)
+
+        if let thread = findKnownAppServerThread(
+            for: session,
+            candidateThreadIDs: candidateThreadIDs
+        ) {
             return thread
         }
         if pendingLocalThreadLoads.contains(session.sessionId) {
@@ -369,15 +374,90 @@ class CodexSessionMonitor: ObservableObject {
         pendingLocalThreadLoads.insert(session.sessionId)
         defer { pendingLocalThreadLoads.remove(session.sessionId) }
 
-        do {
-            try? await localAppServerMonitor.refreshHostNow(id: Self.localAppServerHost.id)
-            return try await localAppServerMonitor.openThread(
-                hostId: Self.localAppServerHost.id,
-                threadId: session.sessionId
-            )
-        } catch {
-            return nil
+        for attempt in 0..<4 {
+            if let thread = findKnownAppServerThread(
+                for: session,
+                candidateThreadIDs: candidateThreadIDs
+            ) {
+                return thread
+            }
+
+            do {
+                try await localAppServerMonitor.refreshHostNow(id: Self.localAppServerHost.id)
+            } catch {
+                if attempt == 3 {
+                    break
+                }
+            }
+
+            if let thread = findKnownAppServerThread(
+                for: session,
+                candidateThreadIDs: candidateThreadIDs
+            ) {
+                return thread
+            }
+
+            for threadID in candidateThreadIDs {
+                if let openedThread = try? await localAppServerMonitor.openThread(
+                    hostId: Self.localAppServerHost.id,
+                    threadId: threadID
+                ) {
+                    return openedThread
+                }
+            }
+
+            if attempt < 3 {
+                try? await Task.sleep(for: .milliseconds(150))
+            }
         }
+
+        return nil
+    }
+
+    private func findKnownAppServerThread(
+        for session: SessionState,
+        candidateThreadIDs: [String]
+    ) -> RemoteThreadState? {
+        for threadID in candidateThreadIDs {
+            if let thread = localAppServerMonitor.findThread(
+                hostId: Self.localAppServerHost.id,
+                threadId: threadID,
+                transcriptPath: session.transcriptPath
+            ) {
+                return thread
+            }
+        }
+
+        return localAppServerMonitor.findThread(
+            hostId: Self.localAppServerHost.id,
+            threadId: nil,
+            transcriptPath: session.transcriptPath
+        )
+    }
+
+    private func appServerCandidateThreadIDs(for session: SessionState) -> [String] {
+        var candidates: [String] = []
+
+        func appendCandidate(_ value: String?) {
+            guard let value else { return }
+            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !candidates.contains(trimmed) else { return }
+            candidates.append(trimmed)
+        }
+
+        appendCandidate(session.sessionId)
+
+        if let transcriptPath = session.transcriptPath {
+            let filename = URL(fileURLWithPath: transcriptPath).deletingPathExtension().lastPathComponent
+            if let match = filename.range(
+                of: #"[0-9a-f]{8,}-[0-9a-f-]{20,}$"#,
+                options: .regularExpression
+            ) {
+                appendCandidate(String(filename[match]))
+            }
+        }
+
+        return candidates
     }
 
     private func sendToTerminalFallback(text: String, session: SessionState) async -> Bool {

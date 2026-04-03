@@ -169,6 +169,64 @@ final class PendingInteractionTests: XCTestCase {
         XCTAssertEqual(capturedText, "hello app-server")
     }
 
+    @MainActor
+    func testLocalSendMessageCanUseHiddenRawThreadForSameCwdSession() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        let sentThreadId = LockedBox<String?>(nil)
+        connection.sendMessageHandler = { threadId, _, _, _ in
+            await sentThreadId.set(threadId)
+        }
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        let hiddenThreadId = "session-hidden"
+        let transcriptPath = "/Users/test/.codex/sessions/2026/04/03/rollout-2026-04-03T14-40-04-\(hiddenThreadId).jsonl"
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(
+            sessionId: hiddenThreadId,
+            transcriptPath: transcriptPath,
+            cwd: "/tmp/project"
+        )))
+        await Task.yield()
+
+        localMonitor.apply(event: .threadList(
+            hostId: host.id,
+            threads: [
+                makeThread(id: "session-visible", preview: "Newer", cwd: "/tmp/project"),
+                makeThread(id: hiddenThreadId, preview: "Older", cwd: "/tmp/project")
+            ]
+        ))
+        await Task.yield()
+
+        XCTAssertNil(sessionMonitor.localAppServerThreads[hiddenThreadId])
+
+        let success = await sessionMonitor.sendMessage(sessionId: hiddenThreadId, text: "use raw thread")
+        let capturedThreadId = await sentThreadId.get()
+
+        XCTAssertTrue(success)
+        XCTAssertEqual(capturedThreadId, hiddenThreadId)
+    }
+
     private func makeInteraction(questions: [PendingInteractionQuestion]) -> PendingUserInputInteraction {
         PendingUserInputInteraction(
             id: "call-1",
@@ -178,12 +236,16 @@ final class PendingInteractionTests: XCTestCase {
         )
     }
 
-    private func makeHookEvent(sessionId: String) -> HookEvent {
+    private func makeHookEvent(
+        sessionId: String,
+        transcriptPath: String? = nil,
+        cwd: String = "/tmp/project"
+    ) -> HookEvent {
         HookEvent(
             sessionId: sessionId,
             provider: .codex,
-            cwd: "/tmp/project",
-            transcriptPath: nil,
+            cwd: cwd,
+            transcriptPath: transcriptPath,
             event: "SessionStart",
             status: "waiting_for_input",
             pid: 123,

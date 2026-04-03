@@ -1352,6 +1352,35 @@ final class RemoteSessionMonitor: ObservableObject {
             }
     }
 
+    func findThread(
+        hostId: String,
+        threadId: String? = nil,
+        transcriptPath: String? = nil
+    ) -> RemoteThreadState? {
+        let normalizedPath = transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let threadId,
+           let visibleThread = threadState(hostId: hostId, threadId: threadId) {
+            return visibleThread
+        }
+
+        let matchedRawThread = rawThreads(hostId: hostId).first { thread in
+            if let threadId, thread.id == threadId {
+                return true
+            }
+            if let normalizedPath,
+               let rawPath = thread.path?.trimmingCharacters(in: .whitespacesAndNewlines),
+               !normalizedPath.isEmpty,
+               rawPath == normalizedPath {
+                return true
+            }
+            return false
+        }
+
+        guard let matchedRawThread else { return nil }
+        return makeThreadCandidateState(hostId: hostId, thread: matchedRawThread)
+    }
+
     private func makeThreadCandidateState(hostId: String, thread: RemoteAppServerThread) -> RemoteThreadState {
         if let state = threadState(hostId: hostId, threadId: thread.id) {
             return state
