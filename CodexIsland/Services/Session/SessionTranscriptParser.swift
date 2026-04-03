@@ -22,6 +22,18 @@ actor SessionTranscriptParser {
         }
     }
 
+    func runtimeInfo(session: SessionState) async -> SessionRuntimeInfo {
+        switch session.provider {
+        case .claude:
+            return .empty
+        case .codex:
+            return await CodexConversationParser.shared.runtimeInfo(
+                sessionId: session.sessionId,
+                transcriptPath: session.transcriptPath
+            )
+        }
+    }
+
     func parseFullConversation(session: SessionState) async -> [ChatMessage] {
         switch session.provider {
         case .claude:

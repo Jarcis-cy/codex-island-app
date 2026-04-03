@@ -114,6 +114,7 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
     var pendingInteractions: [PendingInteraction]
     var connectionState: RemoteHostConnectionState
     var turnContext: RemoteThreadTurnContext
+    var tokenUsage: SessionTokenUsageInfo?
 
     var id: String { stableId }
 
@@ -151,6 +152,10 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
 
     var currentReasoningEffort: RemoteAppServerReasoningEffort? {
         turnContext.effectiveReasoningEffort
+    }
+
+    var contextRemainingPercent: Int? {
+        tokenUsage?.contextRemainingPercent
     }
 
     var canStartTurn: Bool {

@@ -20,6 +20,7 @@ actor CodexConversationParser {
         let pendingInteractions: [PendingInteraction]
         let transcriptPhase: SessionPhase?
         let conversationInfo: ConversationInfo
+        let runtimeInfo: SessionRuntimeInfo
     }
 
     private var snapshots: [String: Snapshot] = [:]
@@ -34,6 +35,10 @@ actor CodexConversationParser {
                 firstUserMessage: nil,
                 lastUserMessageDate: nil
             )
+    }
+
+    func runtimeInfo(sessionId: String, transcriptPath: String?) -> SessionRuntimeInfo {
+        loadSnapshot(sessionId: sessionId, transcriptPath: transcriptPath)?.runtimeInfo ?? .empty
     }
 
     func parseFullConversation(sessionId: String, transcriptPath: String?) -> [ChatMessage] {
@@ -145,7 +150,8 @@ actor CodexConversationParser {
                     lastToolName: nil,
                     firstUserMessage: nil,
                     lastUserMessageDate: nil
-                )
+                ),
+                runtimeInfo: .empty
             )
         }
 
@@ -155,6 +161,7 @@ actor CodexConversationParser {
         var pendingInteractionOrder: [String] = []
         var pendingInteractions: [String: PendingInteraction] = [:]
         var transcriptPhase: SessionPhase?
+        var runtimeInfo = SessionRuntimeInfo.empty
 
         let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
         for (lineIndex, line) in lines.enumerated() {
@@ -167,6 +174,14 @@ actor CodexConversationParser {
             let timestamp = parseTimestamp(json["timestamp"] as? String)
 
             switch lineType {
+            case "session_meta":
+                if let payload = json["payload"] as? [String: Any] {
+                    updateRuntimeInfo(&runtimeInfo, sessionMetaPayload: payload)
+                }
+            case "turn_context":
+                if let payload = json["payload"] as? [String: Any] {
+                    updateRuntimeInfo(&runtimeInfo, turnContextPayload: payload)
+                }
             case "response_item":
                 guard let payload = json["payload"] as? [String: Any] else { continue }
                 parseResponseItem(
@@ -186,6 +201,7 @@ actor CodexConversationParser {
                       let eventPayload = payload["payload"] as? [String: Any] else {
                     continue
                 }
+                updateRuntimeInfo(&runtimeInfo, eventType: eventType, payload: eventPayload)
                 parseEventMsg(
                     eventType: eventType,
                     payload: eventPayload,
@@ -219,8 +235,98 @@ actor CodexConversationParser {
                 transcriptPhase,
                 pendingInteractions: orderedPendingInteractions
             ),
-            conversationInfo: conversationInfo
+            conversationInfo: conversationInfo,
+            runtimeInfo: runtimeInfo
         )
+    }
+
+    private func updateRuntimeInfo(_ runtimeInfo: inout SessionRuntimeInfo, sessionMetaPayload: [String: Any]) {
+        if let modelProvider = sessionMetaPayload["model_provider"] as? String,
+           !modelProvider.isEmpty {
+            runtimeInfo.modelProvider = modelProvider
+        }
+    }
+
+    private func updateRuntimeInfo(_ runtimeInfo: inout SessionRuntimeInfo, turnContextPayload: [String: Any]) {
+        if let model = turnContextPayload["model"] as? String, !model.isEmpty {
+            runtimeInfo.model = model
+        }
+
+        if let collaboration = turnContextPayload["collaboration_mode"] as? [String: Any],
+           let settings = collaboration["settings"] as? [String: Any],
+           let reasoningEffort = settings["reasoning_effort"] as? String,
+           !reasoningEffort.isEmpty {
+            runtimeInfo.reasoningEffort = reasoningEffort
+        } else if let reasoningEffort = turnContextPayload["reasoning_effort"] as? String,
+                  !reasoningEffort.isEmpty {
+            runtimeInfo.reasoningEffort = reasoningEffort
+        } else if let effort = turnContextPayload["effort"] as? String, !effort.isEmpty {
+            runtimeInfo.reasoningEffort = effort
+        }
+    }
+
+    private func updateRuntimeInfo(
+        _ runtimeInfo: inout SessionRuntimeInfo,
+        eventType: String,
+        payload: [String: Any]
+    ) {
+        switch eventType {
+        case "task_started":
+            if let modelContextWindow = parseInteger(payload["model_context_window"]) {
+                if let tokenUsage = runtimeInfo.tokenUsage {
+                    runtimeInfo.tokenUsage = SessionTokenUsageInfo(
+                        totalTokenUsage: tokenUsage.totalTokenUsage,
+                        lastTokenUsage: tokenUsage.lastTokenUsage,
+                        modelContextWindow: modelContextWindow
+                    )
+                } else {
+                    runtimeInfo.tokenUsage = SessionTokenUsageInfo(
+                        totalTokenUsage: .zero,
+                        lastTokenUsage: .zero,
+                        modelContextWindow: modelContextWindow
+                    )
+                }
+            }
+        case "token_count":
+            guard let info = payload["info"] as? [String: Any] else { return }
+            let totalTokenUsage = parseTokenUsage(info["total_token_usage"] as? [String: Any]) ?? .zero
+            let lastTokenUsage = parseTokenUsage(info["last_token_usage"] as? [String: Any]) ?? .zero
+            let contextWindow = parseInteger(info["model_context_window"]) ?? runtimeInfo.tokenUsage?.modelContextWindow
+            runtimeInfo.tokenUsage = SessionTokenUsageInfo(
+                totalTokenUsage: totalTokenUsage,
+                lastTokenUsage: lastTokenUsage,
+                modelContextWindow: contextWindow
+            )
+        default:
+            break
+        }
+    }
+
+    private func parseTokenUsage(_ payload: [String: Any]?) -> SessionTokenUsage? {
+        guard let payload else { return nil }
+        return SessionTokenUsage(
+            inputTokens: parseInteger(payload["input_tokens"]) ?? 0,
+            cachedInputTokens: parseInteger(payload["cached_input_tokens"]) ?? 0,
+            outputTokens: parseInteger(payload["output_tokens"]) ?? 0,
+            reasoningOutputTokens: parseInteger(payload["reasoning_output_tokens"]) ?? 0,
+            totalTokens: parseInteger(payload["total_tokens"]) ?? 0
+        )
+    }
+
+    private func parseInteger(_ value: Any?) -> Int? {
+        if let value = value as? Int {
+            return value
+        }
+        if let value = value as? Int64 {
+            return Int(value)
+        }
+        if let value = value as? Double {
+            return Int(value)
+        }
+        if let value = value as? NSNumber {
+            return value.intValue
+        }
+        return nil
     }
 
     private func parseResponseItem(

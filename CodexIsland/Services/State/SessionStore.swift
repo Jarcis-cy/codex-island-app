@@ -84,7 +84,7 @@ actor SessionStore {
         case .loadHistory(let sessionId, let cwd):
             await loadHistoryFromFile(sessionId: sessionId, cwd: cwd)
 
-        case .historyLoaded(let sessionId, let messages, let completedTools, let toolResults, let structuredResults, let pendingInteractions, let transcriptPhase, let conversationInfo):
+        case .historyLoaded(let sessionId, let messages, let completedTools, let toolResults, let structuredResults, let pendingInteractions, let transcriptPhase, let conversationInfo, let runtimeInfo):
             await processHistoryLoaded(
                 sessionId: sessionId,
                 messages: messages,
@@ -93,7 +93,8 @@ actor SessionStore {
                 structuredResults: structuredResults,
                 pendingInteractions: pendingInteractions,
                 transcriptPhase: transcriptPhase,
-                conversationInfo: conversationInfo
+                conversationInfo: conversationInfo,
+                runtimeInfo: runtimeInfo
             )
 
         case .toolCompleted(let sessionId, let toolUseId, let result):
@@ -705,7 +706,9 @@ actor SessionStore {
 
         // Update conversationInfo from JSONL (summary, lastMessage, etc.)
         let conversationInfo = await SessionTranscriptParser.shared.parse(session: session)
+        let runtimeInfo = await SessionTranscriptParser.shared.runtimeInfo(session: session)
         session.conversationInfo = conversationInfo
+        session.runtimeInfo = runtimeInfo
         session.pendingInteractions = payload.pendingInteractions
         if session.provider == .codex,
            let transcriptPhase = payload.transcriptPhase,
@@ -1089,6 +1092,7 @@ actor SessionStore {
 
         // Also parse conversationInfo (summary, lastMessage, etc.)
         let conversationInfo = await SessionTranscriptParser.shared.parse(session: session)
+        let runtimeInfo = await SessionTranscriptParser.shared.runtimeInfo(session: session)
 
         // Process loaded history
         await process(.historyLoaded(
@@ -1099,7 +1103,8 @@ actor SessionStore {
             structuredResults: structuredResults,
             pendingInteractions: pendingInteractions,
             transcriptPhase: transcriptPhase,
-            conversationInfo: conversationInfo
+            conversationInfo: conversationInfo,
+            runtimeInfo: runtimeInfo
         ))
     }
 
@@ -1111,12 +1116,14 @@ actor SessionStore {
         structuredResults: [String: ToolResultData],
         pendingInteractions: [PendingInteraction],
         transcriptPhase: SessionPhase?,
-        conversationInfo: ConversationInfo
+        conversationInfo: ConversationInfo,
+        runtimeInfo: SessionRuntimeInfo
     ) async {
         guard var session = sessions[sessionId] else { return }
 
         // Update conversationInfo (summary, lastMessage, etc.)
         session.conversationInfo = conversationInfo
+        session.runtimeInfo = runtimeInfo
         session.pendingInteractions = pendingInteractions
         if session.provider == .codex,
            let transcriptPhase,

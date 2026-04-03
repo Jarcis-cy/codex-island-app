@@ -60,6 +60,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
     // MARK: - Conversation Info (from JSONL parsing)
 
     var conversationInfo: ConversationInfo
+    var runtimeInfo: SessionRuntimeInfo
 
     // MARK: - Clear Reconciliation
 
@@ -105,6 +106,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
             summary: nil, lastMessage: nil, lastMessageRole: nil,
             lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil
         ),
+        runtimeInfo: SessionRuntimeInfo = .empty,
         needsClearReconciliation: Bool = false,
         lastActivity: Date = Date(),
         createdAt: Date = Date()
@@ -132,6 +134,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.subagentState = subagentState
         self.pendingInteractions = pendingInteractions
         self.conversationInfo = conversationInfo
+        self.runtimeInfo = runtimeInfo
         self.needsClearReconciliation = needsClearReconciliation
         self.lastActivity = lastActivity
         self.createdAt = createdAt
@@ -255,6 +258,18 @@ struct SessionState: Equatable, Identifiable, Sendable {
         terminalName != nil ||
         terminalWindowId != nil ||
         terminalSurfaceId != nil
+    }
+
+    var currentModel: String? {
+        runtimeInfo.model
+    }
+
+    var currentReasoningEffort: String? {
+        runtimeInfo.reasoningEffort
+    }
+
+    var contextRemainingPercent: Int? {
+        runtimeInfo.tokenUsage?.contextRemainingPercent
     }
 }
 

@@ -194,6 +194,53 @@ final class RemoteSessionMonitorTests: XCTestCase {
         )
     }
 
+    func testTokenUsageUpdateSetsContextRemainingPercent() throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        let thread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.apply(event: .threadUpsert(hostId: host.id, thread: thread))
+        monitor.apply(event: .tokenUsageUpdated(
+            hostId: host.id,
+            threadId: "thread-1",
+            turnId: "turn-1",
+            tokenUsage: SessionTokenUsageInfo(
+                totalTokenUsage: SessionTokenUsage(
+                    inputTokens: 120_000,
+                    cachedInputTokens: 0,
+                    outputTokens: 3_000,
+                    reasoningOutputTokens: 500,
+                    totalTokens: 123_000
+                ),
+                lastTokenUsage: SessionTokenUsage(
+                    inputTokens: 100_000,
+                    cachedInputTokens: 0,
+                    outputTokens: 0,
+                    reasoningOutputTokens: 0,
+                    totalTokens: 100_000
+                ),
+                modelContextWindow: 950_000
+            )
+        ))
+
+        let updated = try XCTUnwrap(monitor.threads.first)
+        XCTAssertEqual(updated.contextRemainingPercent, 91)
+        XCTAssertEqual(updated.tokenUsage?.totalTokenUsage.totalTokens, 123_000)
+    }
+
     func testApprovalEventSetsPendingApprovalState() throws {
         let logger = TestDiagnosticsLogger()
         let connection = FakeRemoteConnection()

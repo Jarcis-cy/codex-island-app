@@ -206,10 +206,19 @@ struct ChatView: View {
                     .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.6))
                     .frame(width: 24, height: 24)
 
-                Text(session.displayTitle)
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.85))
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(session.displayTitle)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.85))
+                        .lineLimit(1)
+
+                    SessionStatusStrip(
+                        model: session.currentModel,
+                        reasoningEffort: session.currentReasoningEffort,
+                        serviceTier: nil,
+                        contextRemainingPercent: session.contextRemainingPercent
+                    )
+                }
 
                 Spacer()
             }

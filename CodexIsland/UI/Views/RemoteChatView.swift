@@ -288,6 +288,13 @@ struct RemoteChatView: View {
                     .font(.system(size: 10, weight: .medium))
                     .foregroundColor(.white.opacity(0.35))
                     .lineLimit(1)
+
+                SessionStatusStrip(
+                    model: thread.currentModel,
+                    reasoningEffort: thread.currentReasoningEffort?.rawValue,
+                    serviceTier: thread.turnContext.serviceTier?.rawValue,
+                    contextRemainingPercent: thread.contextRemainingPercent
+                )
             }
 
             Spacer()
@@ -931,9 +938,12 @@ struct RemoteChatView: View {
             selectedModelForEffort = nil
         }
         do {
-            let models = try await remoteSessionMonitor.listModels(hostId: thread.hostId)
+            let models = try await remoteSessionMonitor.listModels(
+                hostId: thread.hostId,
+                includeHidden: true
+            )
             await MainActor.run {
-                availableModels = models.filter { !$0.hidden }
+                availableModels = displayModels(from: models)
                 isSlashPanelLoading = false
             }
         } catch {
@@ -943,6 +953,41 @@ struct RemoteChatView: View {
                 slashFeedbackMessage = error.localizedDescription
             }
         }
+    }
+
+    private func displayModels(from models: [RemoteAppServerModel]) -> [RemoteAppServerModel] {
+        let currentModel = thread.currentModel ?? thread.turnContext.model
+        var visibleModels = models.filter { !$0.hidden }
+
+        if let currentModel,
+           !visibleModels.contains(where: { $0.model == currentModel }) {
+            if let existingCurrent = models.first(where: { $0.model == currentModel }) {
+                visibleModels.insert(existingCurrent, at: 0)
+            } else {
+                visibleModels.insert(syntheticCurrentModel(named: currentModel), at: 0)
+            }
+        }
+
+        return visibleModels
+    }
+
+    private func syntheticCurrentModel(named model: String) -> RemoteAppServerModel {
+        let effort = thread.currentReasoningEffort ?? .medium
+        return RemoteAppServerModel(
+            id: "current-\(model)",
+            model: model,
+            displayName: model.uppercased(),
+            description: "Current thread model",
+            hidden: false,
+            supportedReasoningEfforts: [
+                RemoteAppServerReasoningEffortOption(
+                    reasoningEffort: effort,
+                    description: "Current thread reasoning effort"
+                )
+            ],
+            defaultReasoningEffort: effort,
+            isDefault: false
+        )
     }
 
     private func loadResumeCandidates() async {

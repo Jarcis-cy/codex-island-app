@@ -22,6 +22,7 @@ enum RemoteConnectionEvent: Sendable {
         explanation: String?,
         plan: [RemoteAppServerPlanStep]
     )
+    case tokenUsageUpdated(hostId: String, threadId: String, turnId: String, tokenUsage: SessionTokenUsageInfo)
     case itemStarted(hostId: String, threadId: String, turnId: String, item: RemoteAppServerThreadItem)
     case itemCompleted(hostId: String, threadId: String, turnId: String, item: RemoteAppServerThreadItem)
     case agentMessageDelta(hostId: String, threadId: String, turnId: String, itemId: String, delta: String)
@@ -918,6 +919,13 @@ final class RemoteSessionMonitor: ObservableObject {
                 plan: plan
             )
 
+        case .tokenUsageUpdated(let hostId, let threadId, _, let tokenUsage):
+            updateTokenUsageSnapshot(
+                hostId: hostId,
+                threadId: threadId,
+                tokenUsage: tokenUsage
+            )
+
         case .itemStarted(let hostId, let threadId, _, let item):
             guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
             upsertHistoryItem(item, threadIndex: index, isCompletion: false)
@@ -1080,6 +1088,7 @@ final class RemoteSessionMonitor: ObservableObject {
                 if isRebindingRawThread {
                     threads[index].pendingApproval = nil
                     threads[index].pendingInteractions.removeAll()
+                    threads[index].tokenUsage = nil
                     optimisticUserMessages.removeAll {
                         $0.hostId == hostId && $0.threadId == previousThreadId
                     }
@@ -1090,6 +1099,7 @@ final class RemoteSessionMonitor: ObservableObject {
                 threads[index].canSteerTurn = computedTurn != nil
                 threads[index].pendingApproval = nil
                 threads[index].pendingInteractions.removeAll()
+                threads[index].tokenUsage = nil
                 optimisticUserMessages.removeAll {
                     $0.hostId == hostId && $0.threadId == previousThreadId
                 }
@@ -1127,7 +1137,8 @@ final class RemoteSessionMonitor: ObservableObject {
             pendingApproval: nil,
             pendingInteractions: [],
             connectionState: connectionState,
-            turnContext: .empty
+            turnContext: .empty,
+            tokenUsage: nil
         )
 
         threads.append(state)
@@ -1186,6 +1197,16 @@ final class RemoteSessionMonitor: ObservableObject {
         guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
         markStateChanged()
         threads[index].turnContext = snapshot
+    }
+
+    private func updateTokenUsageSnapshot(
+        hostId: String,
+        threadId: String,
+        tokenUsage: SessionTokenUsageInfo
+    ) {
+        guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
+        markStateChanged()
+        threads[index].tokenUsage = tokenUsage
     }
 
     private func clearPendingApproval(hostId: String, threadId: String, itemId: String) {
@@ -1354,7 +1375,8 @@ final class RemoteSessionMonitor: ObservableObject {
             pendingApproval: nil,
             pendingInteractions: [],
             connectionState: connectionState,
-            turnContext: .empty
+            turnContext: .empty,
+            tokenUsage: nil
         )
     }
 
@@ -2194,6 +2216,14 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
                     turnId: payload.turnId,
                     explanation: payload.explanation,
                     plan: payload.plan
+                ))
+            case "thread/tokenUsage/updated":
+                let payload = try remoteDecodeValue(params, as: RemoteAppServerThreadTokenUsageUpdatedNotification.self)
+                await emit(.tokenUsageUpdated(
+                    hostId: host.id,
+                    threadId: payload.threadId,
+                    turnId: payload.turnId,
+                    tokenUsage: payload.tokenUsage.sessionValue
                 ))
             case "item/started":
                 let payload = try remoteDecodeValue(params, as: RemoteAppServerItemStartedNotification.self)

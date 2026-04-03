@@ -782,6 +782,26 @@ nonisolated struct RemoteAppServerTurnPlanUpdatedNotification: Codable, Sendable
     let plan: [RemoteAppServerPlanStep]
 }
 
+nonisolated struct RemoteAppServerThreadTokenUsageUpdatedNotification: Codable, Sendable {
+    let threadId: String
+    let turnId: String
+    let tokenUsage: RemoteAppServerThreadTokenUsage
+}
+
+nonisolated struct RemoteAppServerThreadTokenUsage: Codable, Equatable, Sendable {
+    let total: RemoteAppServerTokenUsageBreakdown
+    let last: RemoteAppServerTokenUsageBreakdown
+    let modelContextWindow: Int?
+}
+
+nonisolated struct RemoteAppServerTokenUsageBreakdown: Codable, Equatable, Sendable {
+    let totalTokens: Int
+    let inputTokens: Int
+    let cachedInputTokens: Int
+    let outputTokens: Int
+    let reasoningOutputTokens: Int
+}
+
 nonisolated struct RemoteAppServerItemStartedNotification: Codable, Sendable {
     let item: RemoteAppServerThreadItem
     let threadId: String
@@ -843,6 +863,28 @@ nonisolated struct RemoteAppServerNetworkPermission: Codable, Sendable {
 nonisolated struct RemoteAppServerFileSystemPermission: Codable, Sendable {
     let read: [String]?
     let write: [String]?
+}
+
+extension RemoteAppServerThreadTokenUsage {
+    nonisolated var sessionValue: SessionTokenUsageInfo {
+        SessionTokenUsageInfo(
+            totalTokenUsage: total.sessionValue,
+            lastTokenUsage: last.sessionValue,
+            modelContextWindow: modelContextWindow
+        )
+    }
+}
+
+extension RemoteAppServerTokenUsageBreakdown {
+    nonisolated var sessionValue: SessionTokenUsage {
+        SessionTokenUsage(
+            inputTokens: inputTokens,
+            cachedInputTokens: cachedInputTokens,
+            outputTokens: outputTokens,
+            reasoningOutputTokens: reasoningOutputTokens,
+            totalTokens: totalTokens
+        )
+    }
 }
 
 nonisolated func remoteDecodeValue<T: Decodable>(_ value: AnyCodable, as type: T.Type) throws -> T {

@@ -339,6 +339,24 @@ extension CodexSessionMonitor: CodexTranscriptWatcherDelegate {
     nonisolated func didUpdateCodexTranscript(sessionId: String) {
         Task { @MainActor in
             guard let session = await SessionStore.shared.session(for: sessionId) else { return }
+            let result = await SessionTranscriptParser.shared.parseIncremental(session: session)
+
+            if result.clearDetected {
+                await SessionStore.shared.process(.clearDetected(sessionId: sessionId))
+            }
+
+            let payload = FileUpdatePayload(
+                sessionId: sessionId,
+                cwd: session.cwd,
+                messages: result.newMessages,
+                isIncremental: !result.clearDetected,
+                completedToolIds: result.completedToolIds,
+                toolResults: result.toolResults,
+                structuredResults: result.structuredResults,
+                pendingInteractions: result.pendingInteractions,
+                transcriptPhase: result.transcriptPhase
+            )
+            await SessionStore.shared.process(.fileUpdated(payload))
             await ChatHistoryManager.shared.syncFromFile(sessionId: sessionId, cwd: session.cwd)
         }
     }
