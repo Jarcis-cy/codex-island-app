@@ -1154,29 +1154,12 @@ struct PendingInteractionBar: View {
 
     @ViewBuilder
     private func userInputContent(_ request: PendingUserInputInteraction) -> some View {
-        if !canRespondInline || request.questions.isEmpty {
-            HStack {
-                Spacer()
-                Button {
-                    if canOpenTerminal {
-                        onOpenTerminal()
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "terminal")
-                            .font(.system(size: 11, weight: .medium))
-                        Text("Terminal")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(canOpenTerminal ? .black : .white.opacity(0.4))
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                    .background(canOpenTerminal ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
-                    .clipShape(Capsule())
-                }
-                .buttonStyle(.plain)
-            }
+        let presentationMode = request.presentationMode(canRespondInline: canRespondInline)
+
+        if presentationMode == .terminalOnly {
+            terminalShortcutButton()
         } else if let question = request.questions[safe: currentQuestionIndex] {
+            let isReadOnly = presentationMode == .readOnly
             VStack(alignment: .leading, spacing: 10) {
                 if request.questions.count > 1 {
                     Text("Question \(currentQuestionIndex + 1) / \(request.questions.count)")
@@ -1192,6 +1175,7 @@ struct PendingInteractionBar: View {
                     VStack(alignment: .leading, spacing: 8) {
                         ForEach(Array(question.options.enumerated()), id: \.offset) { _, option in
                             Button {
+                                guard !isReadOnly else { return }
                                 selectedAnswers[question.id] = option.label
                                 Task {
                                     await advanceOrSubmit(request: request)
@@ -1217,7 +1201,7 @@ struct PendingInteractionBar: View {
                                 )
                             }
                             .buttonStyle(.plain)
-                            .disabled(isSubmitting)
+                            .disabled(isSubmitting || isReadOnly)
                         }
 
                         if question.isOther {
@@ -1236,7 +1220,9 @@ struct PendingInteractionBar: View {
                                                     .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
                                             )
                                     )
+                                    .disabled(isReadOnly || isSubmitting)
                                     .onSubmit {
+                                        guard !isReadOnly else { return }
                                         guard !textAnswer.isEmpty else { return }
                                         selectedAnswers[question.id] = textAnswer
                                         Task {
@@ -1245,6 +1231,7 @@ struct PendingInteractionBar: View {
                                     }
 
                                 Button {
+                                    guard !isReadOnly else { return }
                                     selectedAnswers[question.id] = textAnswer
                                     Task {
                                         await advanceOrSubmit(request: request)
@@ -1259,49 +1246,64 @@ struct PendingInteractionBar: View {
                                         .clipShape(Capsule())
                                 }
                                 .buttonStyle(.plain)
-                                .disabled(textAnswer.isEmpty || isSubmitting)
+                                .disabled(isReadOnly || textAnswer.isEmpty || isSubmitting)
                             }
+                        }
+
+                        if isReadOnly {
+                            terminalFallbackHint
+                            terminalShortcutButton(alignment: .leading)
                         }
                     }
                 } else {
-                    HStack(spacing: 10) {
-                        TextField("Type your answer", text: $textAnswer)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 18)
-                                    .fill(Color.white.opacity(0.08))
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 18)
-                                            .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
-                                    )
-                            )
-                            .onSubmit {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 10) {
+                            TextField("Type your answer", text: $textAnswer)
+                                .textFieldStyle(.plain)
+                                .font(.system(size: 13))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 18)
+                                        .fill(Color.white.opacity(0.08))
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 18)
+                                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                                        )
+                                )
+                                .disabled(isReadOnly || isSubmitting)
+                                .onSubmit {
+                                    guard !isReadOnly else { return }
+                                    selectedAnswers[question.id] = textAnswer
+                                    Task {
+                                        await advanceOrSubmit(request: request)
+                                    }
+                                }
+
+                            Button {
+                                guard !isReadOnly else { return }
                                 selectedAnswers[question.id] = textAnswer
                                 Task {
                                     await advanceOrSubmit(request: request)
                                 }
+                            } label: {
+                                Text(currentQuestionIndex + 1 == request.questions.count ? "Send" : "Next")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 16)
+                                    .padding(.vertical, 8)
+                                    .background(Color.white.opacity(textAnswer.isEmpty ? 0.2 : 0.95))
+                                    .clipShape(Capsule())
                             }
-
-                        Button {
-                            selectedAnswers[question.id] = textAnswer
-                            Task {
-                                await advanceOrSubmit(request: request)
-                            }
-                        } label: {
-                            Text(currentQuestionIndex + 1 == request.questions.count ? "Send" : "Next")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(Color.white.opacity(textAnswer.isEmpty ? 0.2 : 0.95))
-                                .clipShape(Capsule())
+                            .buttonStyle(.plain)
+                            .disabled(isReadOnly || textAnswer.isEmpty || isSubmitting)
                         }
-                        .buttonStyle(.plain)
-                        .disabled(textAnswer.isEmpty || isSubmitting)
+
+                        if isReadOnly {
+                            terminalFallbackHint
+                            terminalShortcutButton(alignment: .leading)
+                        }
                     }
                 }
 
@@ -1310,6 +1312,44 @@ struct PendingInteractionBar: View {
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(0.4))
                 }
+            }
+        }
+    }
+
+    private var terminalFallbackHint: some View {
+        Text("Inline reply is unavailable for this session. Open Terminal to answer there.")
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(.white.opacity(0.4))
+    }
+
+    @ViewBuilder
+    private func terminalShortcutButton(alignment: HorizontalAlignment = .trailing) -> some View {
+        HStack {
+            if alignment == .trailing {
+                Spacer()
+            }
+
+            Button {
+                if canOpenTerminal {
+                    onOpenTerminal()
+                }
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("Terminal")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(canOpenTerminal ? .black : .white.opacity(0.4))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(canOpenTerminal ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
+                .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+
+            if alignment == .leading {
+                Spacer()
             }
         }
     }

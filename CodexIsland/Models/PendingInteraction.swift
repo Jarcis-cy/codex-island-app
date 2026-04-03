@@ -79,6 +79,12 @@ nonisolated struct PendingInteractionQuestion: Equatable, Sendable {
 }
 
 nonisolated struct PendingUserInputInteraction: Identifiable, Equatable, Sendable {
+    nonisolated enum PresentationMode: Equatable, Sendable {
+        case inline
+        case readOnly
+        case terminalOnly
+    }
+
     let id: String
     let title: String
     let questions: [PendingInteractionQuestion]
@@ -90,6 +96,13 @@ nonisolated struct PendingUserInputInteraction: Identifiable, Equatable, Sendabl
 
     var supportsInlineResponse: Bool {
         !questions.isEmpty && questions.allSatisfy(\.supportsInlineResponse)
+    }
+
+    func presentationMode(canRespondInline: Bool) -> PresentationMode {
+        guard !questions.isEmpty else {
+            return .terminalOnly
+        }
+        return canRespondInline ? .inline : .readOnly
     }
 
     var remoteRequestID: RemoteRPCID {

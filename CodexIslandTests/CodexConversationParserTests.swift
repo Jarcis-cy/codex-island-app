@@ -26,6 +26,31 @@ final class CodexConversationParserTests: XCTestCase {
         XCTAssertEqual(runtimeInfo.tokenUsage?.contextRemainingPercent, 91)
     }
 
+    func testPendingUserInputParsesPlanOptions() async throws {
+        let transcript = #"""
+        {"timestamp":"2026-04-03T08:43:40Z","type":"event_msg","payload":{"type":"task_started","payload":{"turn_id":"turn-1","model_context_window":950000,"collaboration_mode_kind":"plan"}}}
+        {"timestamp":"2026-04-03T08:43:50Z","type":"response_item","payload":{"type":"function_call","name":"request_user_input","arguments":"{\"questions\":[{\"header\":\"测试类型\",\"id\":\"test_type_round4\",\"question\":\"这轮你想验证哪种提问风格？\",\"options\":[{\"label\":\"常规澄清 (Recommended)\",\"description\":\"标准 Plan Mode 风格，问题直接、信息密度适中。\"},{\"label\":\"强约束决策\",\"description\":\"每题更偏实现取舍和边界锁定。\"},{\"label\":\"轻量确认\",\"description\":\"问题更短，适合快速点选。\"}]},{\"header\":\"选项布局\",\"id\":\"option_layout_round4\",\"question\":\"你这轮更想观察哪种选项组织方式？\",\"options\":[{\"label\":\"推荐项优先 (Recommended)\",\"description\":\"把默认建议放在第一位，最符合常规用法。\"},{\"label\":\"对立取舍\",\"description\":\"突出两三种互斥方案之间的差异。\"},{\"label\":\"结果导向\",\"description\":\"按后续动作来组织选项，而不是按主题。\"}]}]}","call_id":"call_plan_options"}}
+        """#
+
+        let url = try makeTranscriptFile(contents: transcript)
+
+        let interactions = await CodexConversationParser.shared.pendingInteractions(
+            sessionId: UUID().uuidString,
+            transcriptPath: url.path
+        )
+
+        guard case .userInput(let interaction)? = interactions.first else {
+            return XCTFail("Expected user input interaction")
+        }
+
+        XCTAssertEqual(interaction.questions.count, 2)
+        XCTAssertEqual(interaction.questions[0].header, "测试类型")
+        XCTAssertEqual(interaction.questions[0].options.count, 3)
+        XCTAssertEqual(interaction.questions[0].options[0].label, "常规澄清 (Recommended)")
+        XCTAssertEqual(interaction.questions[1].header, "选项布局")
+        XCTAssertEqual(interaction.questions[1].options[2].description, "按后续动作来组织选项，而不是按主题。")
+    }
+
     private func makeTranscriptFile(contents: String) throws -> URL {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(
             UUID().uuidString,
