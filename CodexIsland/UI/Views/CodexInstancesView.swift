@@ -188,7 +188,6 @@ struct InstanceRow: View {
     @State private var isHovered = false
     @State private var spinnerPhase = 0
 
-    private let codexBlue = TerminalColors.prompt
     private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
     private let spinnerTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
@@ -342,29 +341,39 @@ struct InstanceRow: View {
         case .processing, .compacting:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(codexBlue)
+                .foregroundColor(SessionPhaseHelpers.phaseColor(for: session.phase))
                 .onReceive(spinnerTimer) { _ in
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
         case .waitingForApproval:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(TerminalColors.amber)
+                .foregroundColor(SessionPhaseHelpers.phaseColor(for: session.phase))
                 .onReceive(spinnerTimer) { _ in
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
         case .waitingForInput:
             Circle()
-                .fill(TerminalColors.green)
+                .fill(SessionPhaseHelpers.phaseColor(for: session.phase))
                 .frame(width: 6, height: 6)
-        case .idle, .ended:
+        case .idle:
             if hasPendingInteraction {
                 Text("!")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(TerminalColors.amber)
             } else {
                 Circle()
-                    .fill(Color.white.opacity(0.2))
+                    .fill(SessionPhaseHelpers.phaseColor(for: session.phase))
+                    .frame(width: 6, height: 6)
+            }
+        case .ended:
+            if hasPendingInteraction {
+                Text("!")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(TerminalColors.amber)
+            } else {
+                Circle()
+                    .fill(SessionPhaseHelpers.phaseColor(for: session.phase))
                     .frame(width: 6, height: 6)
             }
         }
@@ -494,29 +503,39 @@ struct RemoteInstanceRow: View {
         case .processing, .compacting:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(TerminalColors.prompt)
+                .foregroundColor(SessionPhaseHelpers.phaseColor(for: thread.phase))
                 .onReceive(spinnerTimer) { _ in
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
         case .waitingForApproval:
             Text(spinnerSymbols[spinnerPhase % spinnerSymbols.count])
                 .font(.system(size: 12, weight: .bold))
-                .foregroundColor(TerminalColors.amber)
+                .foregroundColor(SessionPhaseHelpers.phaseColor(for: thread.phase))
                 .onReceive(spinnerTimer) { _ in
                     spinnerPhase = (spinnerPhase + 1) % spinnerSymbols.count
                 }
         case .waitingForInput:
             Circle()
-                .fill(TerminalColors.green)
+                .fill(SessionPhaseHelpers.phaseColor(for: thread.phase))
                 .frame(width: 6, height: 6)
-        case .idle, .ended:
+        case .idle:
             if hasPendingInteraction {
                 Text("!")
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(TerminalColors.amber)
             } else {
                 Circle()
-                    .fill(thread.connectionState.isConnected ? Color.white.opacity(0.2) : Color.red.opacity(0.7))
+                    .fill(SessionPhaseHelpers.phaseColor(for: thread.phase))
+                    .frame(width: 6, height: 6)
+            }
+        case .ended:
+            if hasPendingInteraction {
+                Text("!")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(TerminalColors.amber)
+            } else {
+                Circle()
+                    .fill(SessionPhaseHelpers.phaseColor(for: thread.phase))
                     .frame(width: 6, height: 6)
             }
         }

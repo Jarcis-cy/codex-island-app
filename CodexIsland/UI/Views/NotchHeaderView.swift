@@ -169,3 +169,51 @@ struct ReadyForInputIndicatorIcon: View {
         .frame(width: size, height: size)
     }
 }
+
+struct ClosedStatusSummaryView: View {
+    static let itemWidth: CGFloat = 28
+    static let itemSpacing: CGFloat = 6
+    static let preferredWidth: CGFloat = itemWidth * 3 + itemSpacing * 2
+
+    let summary: SessionPhaseSummary
+
+    var body: some View {
+        HStack(spacing: Self.itemSpacing) {
+            summaryItem(color: TerminalColors.blue, count: summary.runningCount)
+            summaryItem(color: TerminalColors.amber, count: summary.waitingCount)
+            summaryItem(color: TerminalColors.green, count: summary.idleCount)
+        }
+        .frame(width: Self.preferredWidth, alignment: .trailing)
+    }
+
+    private func summaryItem(color: Color, count: Int) -> some View {
+        Group {
+            if count > 0 {
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 6, height: 6)
+
+                    Text(displayCount(count))
+                        .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.86))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                }
+                .frame(width: Self.itemWidth, alignment: .leading)
+            } else {
+                Circle()
+                    .fill(color.opacity(0.9))
+                    .frame(width: 6, height: 6)
+                    .frame(width: Self.itemWidth, alignment: .center)
+            }
+        }
+    }
+
+    private func displayCount(_ count: Int) -> String {
+        if count > 99 {
+            return "99+"
+        }
+        return "\(count)"
+    }
+}

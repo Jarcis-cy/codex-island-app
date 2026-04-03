@@ -7,19 +7,69 @@
 
 import SwiftUI
 
+enum SessionSummaryBucket: Equatable {
+    case running
+    case waiting
+    case idle
+}
+
+struct SessionPhaseSummary: Equatable {
+    let runningCount: Int
+    let waitingCount: Int
+    let idleCount: Int
+
+    init(phases: [SessionPhase]) {
+        var runningCount = 0
+        var waitingCount = 0
+        var idleCount = 0
+
+        for phase in phases {
+            switch SessionPhaseHelpers.summaryBucket(for: phase) {
+            case .running:
+                runningCount += 1
+            case .waiting:
+                waitingCount += 1
+            case .idle:
+                idleCount += 1
+            case nil:
+                continue
+            }
+        }
+
+        self.runningCount = runningCount
+        self.waitingCount = waitingCount
+        self.idleCount = idleCount
+    }
+
+    var totalCount: Int {
+        runningCount + waitingCount + idleCount
+    }
+}
+
 struct SessionPhaseHelpers {
+    static func summaryBucket(for phase: SessionPhase) -> SessionSummaryBucket? {
+        switch phase {
+        case .processing, .compacting:
+            return .running
+        case .waitingForApproval, .waitingForInput:
+            return .waiting
+        case .idle:
+            return .idle
+        case .ended:
+            return nil
+        }
+    }
+
     /// Get color for session phase
     static func phaseColor(for phase: SessionPhase) -> Color {
-        switch phase {
-        case .waitingForApproval:
+        switch summaryBucket(for: phase) {
+        case .running:
+            return TerminalColors.blue
+        case .waiting:
             return TerminalColors.amber
-        case .waitingForInput:
+        case .idle:
             return TerminalColors.green
-        case .processing:
-            return TerminalColors.cyan
-        case .compacting:
-            return TerminalColors.magenta
-        case .idle, .ended:
+        case nil:
             return TerminalColors.dim
         }
     }

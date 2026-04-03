@@ -51,6 +51,31 @@ final class NotchViewModelTests: XCTestCase {
         )
     }
 
+    func testSessionPhaseSummaryCountsRunningWaitingAndIdleBuckets() {
+        let summary = SessionPhaseSummary(phases: [
+            .processing,
+            .compacting,
+            .waitingForApproval(makePermissionContext()),
+            .waitingForInput,
+            .idle,
+            .ended
+        ])
+
+        XCTAssertEqual(summary.runningCount, 2)
+        XCTAssertEqual(summary.waitingCount, 2)
+        XCTAssertEqual(summary.idleCount, 1)
+        XCTAssertEqual(summary.totalCount, 5)
+    }
+
+    func testSummaryBucketMappingMatchesCollapsedStateRules() {
+        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .processing), .running)
+        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .compacting), .running)
+        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .waitingForInput), .waiting)
+        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .waitingForApproval(makePermissionContext())), .waiting)
+        XCTAssertEqual(SessionPhaseHelpers.summaryBucket(for: .idle), .idle)
+        XCTAssertNil(SessionPhaseHelpers.summaryBucket(for: .ended))
+    }
+
     private func makeViewModel(hoverCloseDelay: TimeInterval = 2.0) -> NotchViewModel {
         NotchViewModel(
             deviceNotchRect: CGRect(x: 0, y: 0, width: 200, height: 32),
@@ -87,6 +112,15 @@ final class NotchViewModelTests: XCTestCase {
             pendingInteractions: [],
             connectionState: .connected,
             turnContext: .empty
+        )
+    }
+
+    private func makePermissionContext() -> PermissionContext {
+        PermissionContext(
+            toolUseId: "tool-1",
+            toolName: "shell",
+            toolInput: nil,
+            receivedAt: Date(timeIntervalSince1970: 1_234)
         )
     }
 }
