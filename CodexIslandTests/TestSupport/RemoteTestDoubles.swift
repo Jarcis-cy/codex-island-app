@@ -200,7 +200,9 @@ func makeThread(
     preview: String = "Preview",
     status: RemoteAppServerThreadStatus = .idle,
     turns: [RemoteAppServerTurn] = [],
-    cwd: String = "/tmp"
+    cwd: String = "/tmp",
+    path: String? = nil,
+    name: String? = nil
 ) -> RemoteAppServerThread {
     RemoteAppServerThread(
         id: id,
@@ -210,10 +212,10 @@ func makeThread(
         createdAt: 1_700_000_000,
         updatedAt: 1_700_000_100,
         status: status,
-        path: nil,
+        path: path,
         cwd: cwd,
         cliVersion: "1.0.0",
-        name: nil,
+        name: name,
         turns: turns
     )
 }

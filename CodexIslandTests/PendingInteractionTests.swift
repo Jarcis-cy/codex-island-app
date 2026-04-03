@@ -618,6 +618,149 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testVisibleLocalThreadBecomesPrimarySessionAndKeepsHookTerminalMetadata() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        let transcriptPath = "/Users/test/.codex/sessions/2026/04/03/rollout-2026-04-03T14-40-04-hook-session.jsonl"
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(
+            HookEvent(
+                sessionId: "hook-session",
+                provider: .codex,
+                cwd: "/tmp/primary-project",
+                transcriptPath: transcriptPath,
+                event: "SessionStart",
+                status: "waiting_for_input",
+                pid: 123,
+                tty: "/dev/ttys001",
+                terminalName: "Apple_Terminal",
+                terminalWindowId: "window-1",
+                terminalTabId: "tab-1",
+                terminalSurfaceId: nil,
+                turnId: nil,
+                tool: nil,
+                toolInput: nil,
+                toolUseId: nil,
+                notificationType: nil,
+                message: nil
+            )
+        ))
+        await Task.yield()
+
+        localMonitor.apply(event: .threadUpsert(
+            hostId: host.id,
+            thread: makeThread(
+                id: "app-thread-visible",
+                preview: "Visible Thread",
+                status: .idle,
+                turns: [
+                    makeTurn(
+                        items: [.agentMessage(id: "assistant-1", text: "hello primary thread")],
+                        status: .completed
+                    )
+                ],
+                cwd: "/tmp/primary-project",
+                path: transcriptPath
+            )
+        ))
+        await Task.yield()
+
+        XCTAssertEqual(sessionMonitor.instances.count, 1)
+        guard let session = sessionMonitor.instances.first else {
+            return XCTFail("Expected merged local session")
+        }
+
+        XCTAssertEqual(session.sessionId, "app-thread-visible")
+        XCTAssertEqual(session.logicalSessionId, "remote|local-app-server|/tmp/primary-project")
+        XCTAssertEqual(session.tty, "ttys001")
+        XCTAssertEqual(session.terminalWindowId, "window-1")
+        XCTAssertEqual(session.displayTitle, "Visible Thread")
+        XCTAssertEqual(session.transcriptPath, transcriptPath)
+    }
+
+    @MainActor
+    func testChatHistoryManagerTracksVisibleLocalThreadHistory() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        localMonitor.apply(event: .threadUpsert(
+            hostId: host.id,
+            thread: makeThread(
+                id: "app-thread-history",
+                preview: "History Thread",
+                status: .idle,
+                turns: [
+                    makeTurn(
+                        items: [
+                            .userMessage(id: "user-1", content: [.text("app-server history")]),
+                            .agentMessage(id: "assistant-1", text: "cached reply")
+                        ],
+                        status: .completed
+                    )
+                ],
+                cwd: "/tmp/history-project"
+            )
+        ))
+        await Task.yield()
+
+        guard let session = sessionMonitor.instances.first(where: { $0.sessionId == "app-thread-history" }) else {
+            return XCTFail("Expected visible local thread session")
+        }
+
+        let cachedHistory = ChatHistoryManager.shared.history(for: session.logicalSessionId)
+        XCTAssertEqual(cachedHistory.count, 2)
+        XCTAssertTrue(
+            ChatHistoryManager.shared.isLoaded(
+                logicalSessionId: session.logicalSessionId,
+                sessionId: session.sessionId
+            )
+        )
+    }
+
+    @MainActor
     func testArchiveSyntheticLocalSessionHidesItFromInstances() async throws {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(

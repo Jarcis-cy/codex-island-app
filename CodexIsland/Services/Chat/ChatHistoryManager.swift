@@ -41,6 +41,10 @@ class ChatHistoryManager: ObservableObject {
         loadedSessions[logicalSessionId] == sessionId
     }
 
+    func syncVisibleSessions(_ sessions: [SessionState], resolvedSessionIds: Set<String> = []) {
+        applySessionSnapshot(sessions, resolvedSessionIds: resolvedSessionIds)
+    }
+
     func loadFromFile(logicalSessionId: String, sessionId: String, cwd: String) async {
         let source = LoadingSource(logicalSessionId: logicalSessionId, sessionId: sessionId)
         guard loadedSessions[logicalSessionId] != sessionId,
@@ -103,6 +107,13 @@ class ChatHistoryManager: ObservableObject {
     // MARK: - State Updates
 
     private func updateFromSessions(_ sessions: [SessionState]) {
+        applySessionSnapshot(sessions, resolvedSessionIds: [])
+    }
+
+    private func applySessionSnapshot(
+        _ sessions: [SessionState],
+        resolvedSessionIds: Set<String>
+    ) {
         var newHistories: [String: [ChatHistoryItem]] = [:]
         var newAgentDescriptions: [String: [String: String]] = [:]
         let activeLogicalIds = Set(sessions.map(\.logicalSessionId))
@@ -113,7 +124,9 @@ class ChatHistoryManager: ObservableObject {
             let filteredItems = filterOutSubagentTools(session.chatItems)
             newHistories[session.logicalSessionId] = filteredItems
             newAgentDescriptions[session.logicalSessionId] = session.subagentState.agentDescriptions
-            if !filteredItems.isEmpty {
+            if !filteredItems.isEmpty ||
+                session.transcriptPath != nil ||
+                resolvedSessionIds.contains(session.sessionId) {
                 loadedSessions[session.logicalSessionId] = session.sessionId
             }
         }

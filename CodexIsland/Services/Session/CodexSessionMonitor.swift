@@ -85,23 +85,6 @@ class CodexSessionMonitor: ObservableObject {
                     }
                 }
 
-                if event.provider == .codex,
-                   let transcriptPath = event.transcriptPath,
-                   !transcriptPath.isEmpty {
-                    Task { @MainActor in
-                        CodexTranscriptWatcherManager.shared.startWatching(
-                            sessionId: event.sessionId,
-                            transcriptPath: transcriptPath
-                        )
-                    }
-                }
-
-                if event.provider == .codex && event.status == "ended" {
-                    Task { @MainActor in
-                        CodexTranscriptWatcherManager.shared.stopWatching(sessionId: event.sessionId)
-                    }
-                }
-
                 if event.event == "Stop" {
                     HookSocketServer.shared.cancelPendingPermissions(sessionId: event.sessionId)
                 }
@@ -353,17 +336,56 @@ class CodexSessionMonitor: ObservableObject {
     }
 
     private func sessionState(for thread: RemoteThreadState) -> SessionState {
-        if let existingSession = latestStoreSessions.first(where: { $0.sessionId == thread.threadId }) {
-            return overlayLocalAppServerState(existingSession)
+        if let metadataSession = localMetadataSession(for: thread, within: latestStoreSessions) {
+            return sessionState(for: thread, metadataSession: metadataSession)
         }
         return syntheticSession(from: thread)
     }
 
+    private func sessionState(
+        for thread: RemoteThreadState,
+        metadataSession: SessionState
+    ) -> SessionState {
+        var merged = SessionState(
+            sessionId: thread.threadId,
+            logicalSessionId: thread.logicalSessionId,
+            provider: .codex,
+            cwd: thread.cwd,
+            projectName: metadataSession.projectName,
+            transcriptPath: metadataSession.transcriptPath,
+            pid: metadataSession.pid,
+            tty: metadataSession.tty,
+            terminalName: metadataSession.terminalName,
+            terminalBundleId: metadataSession.terminalBundleId,
+            terminalProcessId: metadataSession.terminalProcessId,
+            terminalWindowId: metadataSession.terminalWindowId,
+            terminalTabId: metadataSession.terminalTabId,
+            terminalSurfaceId: metadataSession.terminalSurfaceId,
+            isInTmux: metadataSession.isInTmux,
+            focusTarget: metadataSession.focusTarget,
+            focusCapability: metadataSession.focusCapability,
+            phase: metadataSession.phase,
+            chatItems: metadataSession.chatItems,
+            toolTracker: metadataSession.toolTracker,
+            subagentState: metadataSession.subagentState,
+            pendingInteractions: metadataSession.pendingInteractions,
+            conversationInfo: metadataSession.conversationInfo,
+            runtimeInfo: metadataSession.runtimeInfo,
+            needsClearReconciliation: metadataSession.needsClearReconciliation,
+            lastActivity: max(metadataSession.lastActivity, thread.lastActivity),
+            createdAt: min(metadataSession.createdAt, thread.createdAt)
+        )
+        merged = overlayLocalAppServerState(merged, with: thread)
+        return merged
+    }
+
     private func syntheticLocalSessions(excluding sessions: [SessionState]) -> [SessionState] {
         let existingSessionIds = Set(sessions.map(\.sessionId))
+        let matchedStoreSessionIds = Set(localStoreSessionByThreadId(from: sessions).values.map(\.sessionId))
         return localAppServerThreads.values
             .filter { thread in
                 !existingSessionIds.contains(thread.threadId) &&
+                !matchedStoreSessionIds.contains(thread.threadId) &&
                 !dismissedSyntheticSessionIds.contains(thread.threadId)
             }
             .sorted { lhs, rhs in
@@ -494,7 +516,7 @@ class CodexSessionMonitor: ObservableObject {
         latestStoreSessions = sessions
 
         let previousSessionIds = Set(instances.map(\.sessionId))
-        let mergedSessions = sessions.map(overlayLocalAppServerState) + syntheticLocalSessions(excluding: sessions)
+        let mergedSessions = mergedVisibleSessions(from: sessions)
         let currentSessionIds = Set(mergedSessions.map(\.sessionId))
         let removedSessionIds = previousSessionIds.subtracting(currentSessionIds)
         for sessionId in removedSessionIds {
@@ -503,6 +525,17 @@ class CodexSessionMonitor: ObservableObject {
             pendingLocalThreadLoads.remove(sessionId)
             dismissedSyntheticSessionIds.remove(sessionId)
         }
+
+        refreshTranscriptWatchers(for: sessions)
+        let resolvedHistorySessionIds = Set(
+            localAppServerThreads.values
+                .filter { shouldPreferAppServerHistory($0) }
+                .map(\.threadId)
+        )
+        ChatHistoryManager.shared.syncVisibleSessions(
+            mergedSessions,
+            resolvedSessionIds: resolvedHistorySessionIds
+        )
 
         instances = mergedSessions
         pendingInstances = mergedSessions.filter { $0.needsAttention }
@@ -524,7 +557,17 @@ class CodexSessionMonitor: ObservableObject {
 
     private func overlayLocalAppServerState(_ session: SessionState) -> SessionState {
         guard session.provider == .codex,
-              let thread = localAppServerThreads[session.sessionId] else {
+              let thread = localThread(for: session) else {
+            return session
+        }
+        return overlayLocalAppServerState(session, with: thread)
+    }
+
+    private func overlayLocalAppServerState(
+        _ session: SessionState,
+        with thread: RemoteThreadState
+    ) -> SessionState {
+        guard session.provider == .codex else {
             return session
         }
 
@@ -556,6 +599,137 @@ class CodexSessionMonitor: ObservableObject {
 
     private func shouldPreferAppServerHistory(_ thread: RemoteThreadState) -> Bool {
         thread.isLoaded || !thread.history.isEmpty
+    }
+
+    private func mergedVisibleSessions(from sessions: [SessionState]) -> [SessionState] {
+        let localStoreSessions = sessions.filter { $0.provider == .codex }
+        let matchedStoreSessions = localStoreSessionByThreadId(from: localStoreSessions)
+        let localThreadSessions = localAppServerThreads.values
+            .filter { thread in
+                matchedStoreSessions[thread.threadId] != nil ||
+                !dismissedSyntheticSessionIds.contains(thread.threadId)
+            }
+            .sorted { lhs, rhs in
+                if lhs.lastActivity != rhs.lastActivity {
+                    return lhs.lastActivity > rhs.lastActivity
+                }
+                return lhs.threadId < rhs.threadId
+            }
+            .map { thread in
+                if let metadataSession = matchedStoreSessions[thread.threadId] {
+                    return sessionState(for: thread, metadataSession: metadataSession)
+                }
+                return syntheticSession(from: thread)
+            }
+
+        let matchedSessionIds = Set(matchedStoreSessions.values.map(\.sessionId))
+        let fallbackLocalSessions = localStoreSessions
+            .filter { !matchedSessionIds.contains($0.sessionId) }
+            .map(overlayLocalAppServerState)
+
+        let nonCodexSessions = sessions.filter { $0.provider != .codex }
+        return nonCodexSessions + localThreadSessions + fallbackLocalSessions
+    }
+
+    private func localStoreSessionByThreadId(from sessions: [SessionState]) -> [String: SessionState] {
+        var matches: [String: (session: SessionState, score: Int)] = [:]
+
+        for session in sessions where session.provider == .codex {
+            guard let thread = localThread(for: session) else { continue }
+            let score = localThreadMatchScore(session: session, thread: thread)
+            if let existing = matches[thread.threadId], existing.score >= score {
+                continue
+            }
+            matches[thread.threadId] = (session, score)
+        }
+
+        return matches.mapValues(\.session)
+    }
+
+    private func localMetadataSession(
+        for thread: RemoteThreadState,
+        within sessions: [SessionState]
+    ) -> SessionState? {
+        localStoreSessionByThreadId(from: sessions)[thread.threadId]
+    }
+
+    private func localThread(for session: SessionState) -> RemoteThreadState? {
+        guard session.provider == .codex else { return nil }
+        if let knownThread = findKnownAppServerThread(
+            for: session,
+            candidateThreadIDs: appServerCandidateThreadIDs(for: session)
+        ) {
+            return knownThread
+        }
+
+        let normalizedCwd = normalizedCwdIdentity(session.cwd)
+        guard !normalizedCwd.isEmpty else { return nil }
+        return localAppServerThreads.values.first {
+            normalizedCwdIdentity($0.cwd) == normalizedCwd
+        }
+    }
+
+    private func localThreadMatchScore(session: SessionState, thread: RemoteThreadState) -> Int {
+        if session.sessionId == thread.threadId {
+            return 3
+        }
+
+        if let transcriptPath = session.transcriptPath,
+           localAppServerMonitor.findThread(
+                hostId: Self.localAppServerHost.id,
+                threadId: nil,
+                transcriptPath: transcriptPath
+           )?.threadId == thread.threadId {
+            return 2
+        }
+
+        if normalizedCwdIdentity(session.cwd) == normalizedCwdIdentity(thread.cwd) {
+            return 1
+        }
+
+        return 0
+    }
+
+    private func normalizedCwdIdentity(_ cwd: String) -> String {
+        let trimmed = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        guard trimmed.hasPrefix("/") else { return trimmed }
+        return URL(fileURLWithPath: trimmed).standardizedFileURL.path
+    }
+
+    private func refreshTranscriptWatchers(for sessions: [SessionState]) {
+        let codexSessions = sessions.filter { $0.provider == .codex }
+        let activeCodexSessionIds = Set(codexSessions.map(\.sessionId))
+
+        for session in codexSessions {
+            guard let transcriptPath = session.transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !transcriptPath.isEmpty else {
+                CodexTranscriptWatcherManager.shared.stopWatching(sessionId: session.sessionId)
+                continue
+            }
+
+            if localThread(for: session) != nil {
+                CodexTranscriptWatcherManager.shared.stopWatching(sessionId: session.sessionId)
+                continue
+            }
+
+            CodexTranscriptWatcherManager.shared.startWatching(
+                sessionId: session.sessionId,
+                transcriptPath: transcriptPath
+            )
+        }
+
+        for watcherSessionId in activeCodexWatcherSessionIds().subtracting(activeCodexSessionIds) {
+            CodexTranscriptWatcherManager.shared.stopWatching(sessionId: watcherSessionId)
+        }
+    }
+
+    private func activeCodexWatcherSessionIds() -> Set<String> {
+        Set(
+            latestStoreSessions
+                .filter { $0.provider == .codex && $0.transcriptPath != nil }
+                .map(\.sessionId)
+        )
     }
 
     private func overlayConversationInfo(
@@ -830,6 +1004,7 @@ extension CodexSessionMonitor: CodexTranscriptWatcherDelegate {
     nonisolated func didUpdateCodexTranscript(sessionId: String) {
         Task { @MainActor in
             guard let session = await SessionStore.shared.session(for: sessionId) else { return }
+            guard localThread(for: session) == nil else { return }
             let result = await SessionTranscriptParser.shared.parseIncremental(session: session)
 
             if result.clearDetected {
