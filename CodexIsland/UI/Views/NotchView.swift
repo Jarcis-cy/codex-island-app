@@ -78,8 +78,18 @@ struct NotchView: View {
         return ClosedStatusSummaryView.preferredWidth + 18
     }
 
+    private var collapsedLeadingVisibleWidth: CGFloat {
+        guard showsCollapsedSummary else { return 0 }
+        return 28
+    }
+
     private var collapsedHeaderWidth: CGFloat {
-        closedNotchSize.width + collapsedSummaryExtensionWidth
+        closedNotchSize.width + collapsedLeadingVisibleWidth + collapsedSummaryExtensionWidth
+    }
+
+    private var collapsedHeaderOffset: CGFloat {
+        guard showsCollapsedSummary else { return 0 }
+        return (collapsedSummaryExtensionWidth - collapsedLeadingVisibleWidth) / 2
     }
 
     // MARK: - Corner Radii
@@ -152,6 +162,7 @@ struct NotchView: View {
         let panelBottomPadding: CGFloat = isOpened ? 12 : 0
         let panelShadowColor = (isOpened || isHovering) ? Color.black.opacity(0.7) : .clear
         let panelMaxHeight = isOpened ? notchSize.height : nil
+        let panelOffsetX = isOpened ? 0 : collapsedHeaderOffset
 
         notchLayout
             .frame(width: panelWidth, alignment: .top)
@@ -174,6 +185,7 @@ struct NotchView: View {
             .animation(.smooth, value: activityCoordinator.expandingActivity)
             .animation(.smooth, value: collapsedSummary)
             .animation(.spring(response: 0.3, dampingFraction: 0.5), value: isBouncing)
+            .offset(x: panelOffsetX)
             .contentShape(Rectangle())
             .onHover { hovering in
                 withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
@@ -229,18 +241,22 @@ struct NotchView: View {
             if viewModel.status == .opened {
                 openedHeaderContent
             } else if showsCollapsedSummary {
-                ZStack(alignment: .leading) {
-                    Rectangle()
-                        .fill(.black)
-                        .frame(width: closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0))
+                HStack(spacing: 0) {
+                    ZStack(alignment: .leading) {
+                        Rectangle()
+                            .fill(.clear)
+                            .frame(
+                                width: collapsedLeadingVisibleWidth + closedNotchSize.width - cornerRadiusInsets.closed.top + (isBouncing ? 16 : 0)
+                            )
 
-                    CodexCrabIcon(size: 14, animateLegs: isProcessing)
-                        .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showsCollapsedSummary)
-                        .padding(.leading, 10)
+                        CodexCrabIcon(size: 14, animateLegs: isProcessing)
+                            .matchedGeometryEffect(id: "crab", in: activityNamespace, isSource: showsCollapsedSummary)
+                            .padding(.leading, 8)
+                    }
+
+                    ClosedStatusSummaryView(summary: collapsedSummary)
+                        .frame(width: collapsedSummaryExtensionWidth, alignment: .leading)
                 }
-
-                ClosedStatusSummaryView(summary: collapsedSummary)
-                    .frame(width: collapsedSummaryExtensionWidth, alignment: .center)
             } else {
                 Rectangle()
                     .fill(.clear)
