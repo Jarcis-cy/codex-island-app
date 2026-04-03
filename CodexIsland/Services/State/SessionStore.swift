@@ -168,24 +168,26 @@ actor SessionStore {
             return
         }
 
-        let newPhase = event.determinePhase()
+        if event.provider != .codex {
+            let newPhase = event.determinePhase()
 
-        if session.phase.canTransition(to: newPhase) {
-            session.phase = newPhase
-        } else {
-            Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
-        }
+            if session.phase.canTransition(to: newPhase) {
+                session.phase = newPhase
+            } else {
+                Self.logger.debug("Invalid transition: \(String(describing: session.phase), privacy: .public) -> \(String(describing: newPhase), privacy: .public), ignoring")
+            }
 
-        if event.event == "PermissionRequest", let toolUseId = event.toolUseId {
-            Self.logger.debug("Setting tool \(toolUseId.prefix(12), privacy: .public) status to waitingForApproval")
-            updateToolStatus(in: &session, toolId: toolUseId, status: .waitingForApproval)
-        }
+            if event.event == "PermissionRequest", let toolUseId = event.toolUseId {
+                Self.logger.debug("Setting tool \(toolUseId.prefix(12), privacy: .public) status to waitingForApproval")
+                updateToolStatus(in: &session, toolId: toolUseId, status: .waitingForApproval)
+            }
 
-        processToolTracking(event: event, session: &session)
-        processSubagentTracking(event: event, session: &session)
+            processToolTracking(event: event, session: &session)
+            processSubagentTracking(event: event, session: &session)
 
-        if event.event == "Stop" {
-            session.subagentState = SubagentState()
+            if event.event == "Stop" {
+                session.subagentState = SubagentState()
+            }
         }
 
         bind(session: &session)
@@ -709,15 +711,10 @@ actor SessionStore {
         let runtimeInfo = await SessionTranscriptParser.shared.runtimeInfo(session: session)
         session.conversationInfo = conversationInfo
         session.runtimeInfo = runtimeInfo
-        session.pendingInteractions = payload.pendingInteractions
-        if session.provider == .codex,
-           let transcriptPhase = payload.transcriptPhase,
-           shouldApplyCodexTranscriptPhase(
-               currentPhase: session.phase,
-               transcriptPhase: transcriptPhase,
-               pendingInteractions: payload.pendingInteractions
-           ) {
-            session.phase = transcriptPhase
+        if session.provider == .codex {
+            session.pendingInteractions = []
+        } else {
+            session.pendingInteractions = payload.pendingInteractions
         }
 
         // Handle /clear reconciliation - remove items that no longer exist in parser state
@@ -1124,15 +1121,10 @@ actor SessionStore {
         // Update conversationInfo (summary, lastMessage, etc.)
         session.conversationInfo = conversationInfo
         session.runtimeInfo = runtimeInfo
-        session.pendingInteractions = pendingInteractions
-        if session.provider == .codex,
-           let transcriptPhase,
-           shouldApplyCodexTranscriptPhase(
-               currentPhase: session.phase,
-               transcriptPhase: transcriptPhase,
-               pendingInteractions: pendingInteractions
-           ) {
-            session.phase = transcriptPhase
+        if session.provider == .codex {
+            session.pendingInteractions = []
+        } else {
+            session.pendingInteractions = pendingInteractions
         }
 
         // Convert messages to chat items
@@ -1161,26 +1153,6 @@ actor SessionStore {
         session.chatItems.sort { $0.timestamp < $1.timestamp }
 
         sessions[sessionId] = session
-    }
-
-    private func shouldApplyCodexTranscriptPhase(
-        currentPhase: SessionPhase,
-        transcriptPhase: SessionPhase,
-        pendingInteractions: [PendingInteraction]
-    ) -> Bool {
-        if !pendingInteractions.isEmpty {
-            return true
-        }
-
-        if currentPhase == .waitingForInput && transcriptPhase == .processing {
-            return false
-        }
-
-        if currentPhase == .idle && transcriptPhase == .processing {
-            return false
-        }
-
-        return true
     }
 
     // MARK: - File Sync Scheduling

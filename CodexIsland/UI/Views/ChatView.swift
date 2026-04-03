@@ -181,7 +181,7 @@ struct ChatView: View {
     }
 
     private var localAppServerThread: RemoteThreadState? {
-        sessionMonitor.localAppServerThreads[session.sessionId]
+        sessionMonitor.localAppServerThread(for: session)
     }
 
     private var matchingSlashCommands: [LocalSlashCommand] {
@@ -561,7 +561,7 @@ struct ChatView: View {
 
     // MARK: - Input Bar
 
-    /// Prefer app-server messaging for local Codex sessions and fall back to terminal when needed.
+    /// Local Codex messaging is app-server only.
     private var canSendMessages: Bool {
         sessionMonitor.canSendMessage(to: session)
     }
@@ -574,11 +574,21 @@ struct ChatView: View {
             return "Message Codex..."
         }
 
+        if session.provider == .codex {
+            if localAppServerThread == nil {
+                return "Waiting for Codex app-server"
+            }
+            if pendingInteraction != nil {
+                return "Resolve the current Codex interaction above"
+            }
+            return "Codex is busy"
+        }
+
         if session.canAttemptFocusTerminal {
             return "Messaging unavailable. Open Terminal"
         }
 
-        return "Waiting for Codex app-server"
+        return "Waiting for terminal access"
     }
 
     private var composer: some View {

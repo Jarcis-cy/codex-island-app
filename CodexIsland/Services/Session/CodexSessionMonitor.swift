@@ -171,11 +171,7 @@ class CodexSessionMonitor: ObservableObject {
                         )
                     }
                 case .codexLocal:
-                    guard let steps = localApprovalSteps(for: approval, action: action),
-                          await NativeTerminalInputSender.shared.send(steps: steps, to: session) else {
-                        return
-                    }
-                    await refreshSessionAfterInteraction(session)
+                    return
                 }
             case .userInput:
                 break
@@ -199,17 +195,7 @@ class CodexSessionMonitor: ObservableObject {
                 return false
             }
         case .codexLocal:
-            guard interaction.supportsInlineResponse,
-                  let steps = localUserInputSteps(for: interaction, answers: answers),
-                  await NativeTerminalInputSender.shared.send(steps: steps, to: session) else {
-                return false
-            }
-
-            let isTerminalAnswer = answers.answers.keys.count == interaction.questions.count
-            if isTerminalAnswer {
-                await refreshSessionAfterInteraction(session)
-            }
-            return true
+            return false
         case .hookPermission:
             return false
         }
@@ -219,7 +205,7 @@ class CodexSessionMonitor: ObservableObject {
         guard session.provider == .codex else {
             return session.primaryPendingInteraction
         }
-        return localAppServerThreads[session.sessionId]?.primaryPendingInteraction ?? session.primaryPendingInteraction
+        return localThread(for: session)?.primaryPendingInteraction
     }
 
     func canSendMessage(to session: SessionState) -> Bool {
@@ -227,11 +213,11 @@ class CodexSessionMonitor: ObservableObject {
             return session.isInTmux && session.tty != nil
         }
 
-        if let thread = localAppServerThreads[session.sessionId] {
+        if let thread = localThread(for: session) {
             return thread.canSendMessage
         }
 
-        return session.primaryPendingInteraction == nil
+        return false
     }
 
     func canRespondInline(to session: SessionState, interaction: PendingInteraction) -> Bool {
@@ -243,7 +229,7 @@ class CodexSessionMonitor: ObservableObject {
         case .remoteAppServer:
             return true
         case .codexLocal:
-            return NativeTerminalInputSender.shared.canSend(to: session)
+            return false
         case .hookPermission:
             return false
         }
@@ -251,7 +237,7 @@ class CodexSessionMonitor: ObservableObject {
 
     func preferredHistory(for session: SessionState) -> [ChatHistoryItem]? {
         guard session.provider == .codex,
-              let thread = localAppServerThreads[session.sessionId],
+              let thread = localThread(for: session),
               shouldPreferAppServerHistory(thread) else {
             return nil
         }
@@ -261,6 +247,10 @@ class CodexSessionMonitor: ObservableObject {
 
     func prefersAppServerHistory(for session: SessionState) -> Bool {
         preferredHistory(for: session) != nil
+    }
+
+    func localAppServerThread(for session: SessionState) -> RemoteThreadState? {
+        localThread(for: session)
     }
 
     func prepareAppServerThread(session: SessionState) async {
@@ -478,11 +468,11 @@ class CodexSessionMonitor: ObservableObject {
                     try await localAppServerMonitor.sendMessage(thread: thread, text: text)
                     return true
                 } catch {
-                    // Fall through to terminal injection fallback.
+                    return false
                 }
             }
 
-            return await sendToTerminalFallback(text: text, session: session)
+            return false
         }
 
         if let thread = threadForSessionId(sessionId) {
@@ -499,13 +489,14 @@ class CodexSessionMonitor: ObservableObject {
 
     /// Archive (remove) a session from the instances list
     func archiveSession(sessionId: String) {
+        if !latestStoreSessions.contains(where: { $0.sessionId == sessionId }),
+           threadForSessionId(sessionId) != nil {
+            dismissedSyntheticSessionIds.insert(sessionId)
+            updateFromSessions(latestStoreSessions)
+            return
+        }
+
         Task {
-            if await SessionStore.shared.session(for: sessionId) == nil,
-               threadForSessionId(sessionId) != nil {
-                dismissedSyntheticSessionIds.insert(sessionId)
-                updateFromSessions(latestStoreSessions)
-                return
-            }
             await SessionStore.shared.process(.sessionEnded(sessionId: sessionId))
         }
     }
@@ -548,11 +539,6 @@ class CodexSessionMonitor: ObservableObject {
         Task {
             await SessionStore.shared.process(.loadHistory(sessionId: sessionId, cwd: cwd))
         }
-    }
-
-    private func refreshSessionAfterInteraction(_ session: SessionState) async {
-        try? await Task.sleep(for: .milliseconds(250))
-        await SessionStore.shared.process(.loadHistory(sessionId: session.sessionId, cwd: session.cwd))
     }
 
     private func overlayLocalAppServerState(_ session: SessionState) -> SessionState {
@@ -869,16 +855,6 @@ class CodexSessionMonitor: ObservableObject {
         return candidates
     }
 
-    private func sendToTerminalFallback(text: String, session: SessionState) async -> Bool {
-        guard session.isInTmux,
-              let tty = session.tty,
-              let target = await TmuxController.shared.findTmuxTarget(forTTY: tty) else {
-            return false
-        }
-
-        return await ToolApprovalHandler.shared.sendMessage(text, to: target)
-    }
-
     private static func makeLocalAppServerMonitor() -> RemoteSessionMonitor {
         let host = localAppServerHost
         return RemoteSessionMonitor(
@@ -921,69 +897,6 @@ class CodexSessionMonitor: ObservableObject {
         return errno != ESRCH
     }
 
-    private func localApprovalSteps(
-        for interaction: PendingApprovalInteraction,
-        action: PendingApprovalAction
-    ) -> [TerminalInputStep]? {
-        switch interaction.kind {
-        case .permissions:
-            switch action {
-            case .allow:
-                return [.key("y")]
-            case .allowForSession:
-                return [.key("a")]
-            case .deny:
-                return [.key("n")]
-            case .cancel:
-                return nil
-            }
-        case .commandExecution, .fileChange, .generic:
-            switch action {
-            case .allow:
-                return [.key("y")]
-            case .allowForSession:
-                return interaction.availableActions.contains(.allowForSession) ? [.key("a")] : nil
-            case .deny:
-                if interaction.availableActions.contains(.deny) {
-                    return [.key("d")]
-                }
-                return nil
-            case .cancel:
-                if interaction.availableActions.contains(.cancel) {
-                    return [.key("n")]
-                }
-                return nil
-            }
-        }
-    }
-
-    private func localUserInputSteps(
-        for interaction: PendingUserInputInteraction,
-        answers: PendingInteractionAnswerPayload
-    ) -> [TerminalInputStep]? {
-        var steps: [TerminalInputStep] = []
-
-        for question in interaction.questions {
-            guard let questionAnswers = answers.answers[question.id] else { continue }
-
-            if question.isChoiceQuestion {
-                guard let selectedLabel = questionAnswers.first,
-                      let optionIndex = question.options.firstIndex(where: { $0.label == selectedLabel }) else {
-                    return nil
-                }
-                steps.append(.key(String(optionIndex + 1)))
-                continue
-            }
-
-            let text = questionAnswers.first ?? ""
-            if !text.isEmpty {
-                steps.append(.text(text))
-            }
-            steps.append(.enter)
-        }
-
-        return steps.isEmpty ? nil : steps
-    }
 }
 
 // MARK: - Interrupt Watcher Delegate
