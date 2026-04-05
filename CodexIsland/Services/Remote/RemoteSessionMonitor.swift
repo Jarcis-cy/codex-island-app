@@ -1429,29 +1429,19 @@ final class RemoteSessionMonitor: ObservableObject {
         }
 
         let key = "\(hostId):\(thread.id)"
-        guard transcriptSyncTasks[key] == nil else {
+        if let existingTask = transcriptSyncTasks[key] {
+            existingTask.cancel()
+            transcriptSyncTasks.removeValue(forKey: key)
             Task {
                 await self.logMonitorEvent(
                     level: .debug,
                     hostId: hostId,
                     method: "transcript-fallback",
                     threadId: thread.id,
-                    message: "Skipped transcript fallback sync",
-                    payload: "reason=task-already-running key=\(key)"
+                    message: "Restarting transcript fallback sync",
+                    payload: "phase=\(inferredPhase.description) path=\(transcriptPath)"
                 )
             }
-            return
-        }
-
-        Task {
-            await self.logMonitorEvent(
-                level: .debug,
-                hostId: hostId,
-                method: "transcript-fallback",
-                threadId: thread.id,
-                message: "Scheduled transcript fallback sync",
-                payload: "phase=\(inferredPhase.description) path=\(transcriptPath)"
-            )
         }
 
         transcriptSyncTasks[key] = Task { [weak self] in
@@ -1460,6 +1450,15 @@ final class RemoteSessionMonitor: ObservableObject {
                     self?.transcriptSyncTasks.removeValue(forKey: key)
                 }
             }
+
+            await self?.logMonitorEvent(
+                level: .debug,
+                hostId: hostId,
+                method: "transcript-fallback",
+                threadId: thread.id,
+                message: "Scheduled transcript fallback sync",
+                payload: "phase=\(inferredPhase.description) path=\(transcriptPath)"
+            )
 
             do {
                 let snapshot = try await connection.loadTranscriptFallbackSnapshot(
