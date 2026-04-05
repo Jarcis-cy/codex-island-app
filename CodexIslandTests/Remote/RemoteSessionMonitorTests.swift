@@ -647,6 +647,78 @@ final class RemoteSessionMonitorTests: XCTestCase {
         )))
     }
 
+    func testTurnCompletedBackfillsFinalAssistantMessageWhenConnectedMidTurn() throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
+        let thread = makeThread(
+            id: "thread-1",
+            preview: "Repo",
+            status: .active(activeFlags: []),
+            turns: [
+                makeTurn(
+                    id: "turn-1",
+                    items: [
+                        .commandExecution(
+                            id: "cmd-1",
+                            command: "npm run dev",
+                            cwd: "/repo",
+                            status: .inProgress,
+                            aggregatedOutput: nil
+                        )
+                    ],
+                    status: .inProgress
+                )
+            ],
+            cwd: "/repo"
+        )
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadList(hostId: host.id, threads: [thread]))
+        monitor.apply(event: .agentMessageDelta(
+            hostId: host.id,
+            threadId: "thread-1",
+            turnId: "turn-1",
+            itemId: "assistant-1",
+            delta: "- "
+        ))
+        monitor.apply(event: .turnCompleted(
+            hostId: host.id,
+            threadId: "thread-1",
+            turn: makeTurn(
+                id: "turn-1",
+                items: [
+                    .commandExecution(
+                        id: "cmd-1",
+                        command: "npm run dev",
+                        cwd: "/repo",
+                        status: .completed,
+                        aggregatedOutput: "done"
+                    ),
+                    .agentMessage(id: "assistant-1", text: "最终结论已经同步")
+                ],
+                status: .completed
+            )
+        ))
+
+        let updated = try XCTUnwrap(monitor.threads.first)
+        XCTAssertEqual(updated.phase, .waitingForInput)
+        XCTAssertNil(updated.activeTurnId)
+        XCTAssertEqual(updated.history.last?.type, .assistant("最终结论已经同步"))
+    }
+
     func testStartThreadReturnsExistingLogicalSessionForSameCwd() async throws {
         final class CallTracker: @unchecked Sendable {
             var didCallStart = false

@@ -994,6 +994,7 @@ final class RemoteSessionMonitor: ObservableObject {
 
         case .turnCompleted(let hostId, let threadId, let turn):
             guard let index = threadIndex(hostId: hostId, threadId: threadId) else { return }
+            upsertTurnItems(turn.items, threadIndex: index, isCompletion: true)
             threads[index].activeTurnId = nil
             threads[index].canSteerTurn = false
             threads[index].pendingApproval = nil
@@ -1368,6 +1369,16 @@ final class RemoteSessionMonitor: ObservableObject {
             threads[threadIndex].updatedAt = Date()
         }
         updateDerivedFields(at: threadIndex)
+    }
+
+    private func upsertTurnItems(
+        _ items: [RemoteAppServerThreadItem],
+        threadIndex: Int,
+        isCompletion: Bool
+    ) {
+        for item in items {
+            upsertHistoryItem(item, threadIndex: threadIndex, isCompletion: isCompletion)
+        }
     }
 
     private func appendAssistantDelta(threadIndex: Int, itemId: String, delta: String) {
