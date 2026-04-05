@@ -1384,17 +1384,75 @@ final class RemoteSessionMonitor: ObservableObject {
 
     private func scheduleTranscriptFallbackSync(hostId: String, thread: RemoteAppServerThread) {
         guard let transcriptPath = thread.path?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !transcriptPath.isEmpty,
-              let connection = connections[hostId] else {
+              !transcriptPath.isEmpty else {
+            Task {
+                await self.logMonitorEvent(
+                    level: .debug,
+                    hostId: hostId,
+                    method: "transcript-fallback",
+                    threadId: thread.id,
+                    message: "Skipped transcript fallback sync",
+                    payload: "reason=no-transcript-path"
+                )
+            }
+            return
+        }
+
+        guard let connection = connections[hostId] else {
+            Task {
+                await self.logMonitorEvent(
+                    level: .debug,
+                    hostId: hostId,
+                    method: "transcript-fallback",
+                    threadId: thread.id,
+                    message: "Skipped transcript fallback sync",
+                    payload: "reason=no-connection path=\(transcriptPath)"
+                )
+            }
             return
         }
 
         let inferredPhase = inferredVisiblePhase(for: thread)
         let shouldSync = inferredPhase == .idle || inferredPhase == .waitingForInput
-        guard shouldSync else { return }
+        guard shouldSync else {
+            Task {
+                await self.logMonitorEvent(
+                    level: .debug,
+                    hostId: hostId,
+                    method: "transcript-fallback",
+                    threadId: thread.id,
+                    message: "Skipped transcript fallback sync",
+                    payload: "reason=phase-not-eligible phase=\(inferredPhase.description) path=\(transcriptPath)"
+                )
+            }
+            return
+        }
 
         let key = "\(hostId):\(thread.id)"
-        guard transcriptSyncTasks[key] == nil else { return }
+        guard transcriptSyncTasks[key] == nil else {
+            Task {
+                await self.logMonitorEvent(
+                    level: .debug,
+                    hostId: hostId,
+                    method: "transcript-fallback",
+                    threadId: thread.id,
+                    message: "Skipped transcript fallback sync",
+                    payload: "reason=task-already-running key=\(key)"
+                )
+            }
+            return
+        }
+
+        Task {
+            await self.logMonitorEvent(
+                level: .debug,
+                hostId: hostId,
+                method: "transcript-fallback",
+                threadId: thread.id,
+                message: "Scheduled transcript fallback sync",
+                payload: "phase=\(inferredPhase.description) path=\(transcriptPath)"
+            )
+        }
 
         transcriptSyncTasks[key] = Task { [weak self] in
             defer {
@@ -1408,6 +1466,16 @@ final class RemoteSessionMonitor: ObservableObject {
                     sessionId: thread.id,
                     transcriptPath: transcriptPath,
                     maxLines: 400
+                )
+                await self?.logMonitorEvent(
+                    level: .debug,
+                    hostId: hostId,
+                    method: "transcript-fallback",
+                    threadId: thread.id,
+                    message: "Loaded transcript fallback snapshot",
+                    payload: snapshot.map {
+                        "phase=\($0.transcriptPhase?.description ?? "nil") pending=\($0.pendingInteractions.count) history=\($0.history.count)"
+                    } ?? "snapshot=nil"
                 )
                 await MainActor.run {
                     self?.applyTranscriptFallback(hostId: hostId, threadId: thread.id, snapshot: snapshot)
@@ -1465,6 +1533,17 @@ final class RemoteSessionMonitor: ObservableObject {
         if threads[index].primaryPendingInteraction != nil || shouldOverridePhase {
             threads[index].updatedAt = Date()
             threads[index].lastActivity = Date()
+        }
+
+        Task {
+            await self.logMonitorEvent(
+                level: .debug,
+                hostId: hostId,
+                method: "transcript-fallback",
+                threadId: threadId,
+                message: "Applied transcript fallback snapshot",
+                payload: "beforePhase=\(currentPhase.description) transcriptPhase=\(transcriptPhase?.description ?? "nil") afterPhase=\(threads[index].phase.description) pending=\(threads[index].pendingInteractions.count) canSend=\(threads[index].canSendMessage) history=\(threads[index].history.count)"
+            )
         }
     }
 
