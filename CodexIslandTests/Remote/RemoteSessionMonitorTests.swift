@@ -880,6 +880,59 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertEqual(callbackThread.history.first?.type, .user("hello"))
     }
 
+    func testOpenThreadPreservesCollaborationModeFromResumeResponse() async throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
+        let existingThread = makeThread(id: "thread-existing", preview: "Existing", cwd: "/repo")
+        let resumedThread = makeThread(
+            id: "thread-existing",
+            preview: "Existing",
+            status: .active(activeFlags: [.waitingOnUserInput]),
+            turns: [
+                makeTurn(
+                    id: "turn-1",
+                    items: [.plan(id: "plan-1", text: "plan body")],
+                    status: .completed
+                )
+            ],
+            cwd: "/repo"
+        )
+
+        connection.resumeThreadHandler = { _, _ in
+            makeThreadResumeResponse(
+                thread: resumedThread,
+                collaborationMode: RemoteAppServerCollaborationMode(
+                    mode: .plan,
+                    settings: RemoteAppServerCollaborationSettings(
+                        developerInstructions: nil,
+                        model: "gpt-5.4",
+                        reasoningEffort: .medium
+                    )
+                )
+            )
+        }
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadUpsert(hostId: host.id, thread: existingThread))
+
+        let opened = try await monitor.openThread(hostId: host.id, threadId: "thread-existing")
+        XCTAssertEqual(opened.turnContext.collaborationMode?.mode, .plan)
+        XCTAssertEqual(opened.phase, .waitingForInput)
+    }
+
     func testStartFreshThreadBypassesLogicalSessionReuse() async throws {
         let logger = TestDiagnosticsLogger()
         let connection = FakeRemoteConnection()

@@ -443,7 +443,8 @@ final class RemoteAppServerConnectionTests: XCTestCase {
                     "type": "fullAccess"
                 ]
             ],
-            "reasoningEffort": "medium"
+            "reasoningEffort": "medium",
+            "collaborationMode": NSNull()
         ]
     }
 }

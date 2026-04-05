@@ -229,7 +229,8 @@ func makeThreadStartResponse(
     approvalPolicy: RemoteAppServerApprovalPolicy = .onRequest,
     approvalsReviewer: RemoteAppServerApprovalsReviewer = .user,
     sandbox: RemoteAppServerSandboxPolicy = .workspaceWrite(),
-    reasoningEffort: RemoteAppServerReasoningEffort? = .medium
+    reasoningEffort: RemoteAppServerReasoningEffort? = .medium,
+    collaborationMode: RemoteAppServerCollaborationMode? = nil
 ) -> RemoteAppServerThreadStartResponse {
     RemoteAppServerThreadStartResponse(
         thread: thread,
@@ -240,7 +241,8 @@ func makeThreadStartResponse(
         approvalPolicy: approvalPolicy,
         approvalsReviewer: approvalsReviewer,
         sandbox: sandbox,
-        reasoningEffort: reasoningEffort
+        reasoningEffort: reasoningEffort,
+        collaborationMode: collaborationMode
     )
 }
 
@@ -253,7 +255,8 @@ func makeThreadResumeResponse(
     approvalPolicy: RemoteAppServerApprovalPolicy = .onRequest,
     approvalsReviewer: RemoteAppServerApprovalsReviewer = .user,
     sandbox: RemoteAppServerSandboxPolicy = .workspaceWrite(),
-    reasoningEffort: RemoteAppServerReasoningEffort? = .medium
+    reasoningEffort: RemoteAppServerReasoningEffort? = .medium,
+    collaborationMode: RemoteAppServerCollaborationMode? = nil
 ) -> RemoteAppServerThreadResumeResponse {
     RemoteAppServerThreadResumeResponse(
         thread: thread,
@@ -264,7 +267,8 @@ func makeThreadResumeResponse(
         approvalPolicy: approvalPolicy,
         approvalsReviewer: approvalsReviewer,
         sandbox: sandbox,
-        reasoningEffort: reasoningEffort
+        reasoningEffort: reasoningEffort,
+        collaborationMode: collaborationMode
     )
 }
 

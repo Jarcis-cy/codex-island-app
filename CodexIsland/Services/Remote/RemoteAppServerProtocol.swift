@@ -95,6 +95,7 @@ nonisolated struct RemoteAppServerThreadResumeResponse: Codable, Sendable {
     let approvalsReviewer: RemoteAppServerApprovalsReviewer?
     let sandbox: RemoteAppServerSandboxPolicy?
     let reasoningEffort: RemoteAppServerReasoningEffort?
+    let collaborationMode: RemoteAppServerCollaborationMode?
 }
 
 nonisolated struct RemoteAppServerThreadStartResponse: Codable, Sendable {
@@ -107,6 +108,7 @@ nonisolated struct RemoteAppServerThreadStartResponse: Codable, Sendable {
     let approvalsReviewer: RemoteAppServerApprovalsReviewer?
     let sandbox: RemoteAppServerSandboxPolicy?
     let reasoningEffort: RemoteAppServerReasoningEffort?
+    let collaborationMode: RemoteAppServerCollaborationMode?
 }
 
 nonisolated struct RemoteAppServerTurnStartResponse: Codable, Sendable {

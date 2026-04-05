@@ -777,6 +777,33 @@ final class RemoteSessionMonitor: ObservableObject {
             guard let state = threadState(hostId: hostId, threadId: thread.id) else {
                 throw RemoteSessionError.missingThread
             }
+            if state.turnContext.collaborationMode?.mode == .plan,
+               state.phase == .waitingForInput,
+               state.primaryPendingInteraction == nil {
+                let recentHistory = state.history.suffix(4).map { item -> String in
+                    switch item.type {
+                    case .user:
+                        return "user:\(item.id)"
+                    case .assistant:
+                        return "assistant:\(item.id)"
+                    case .thinking:
+                        return "thinking:\(item.id)"
+                    case .toolCall(let tool):
+                        return "tool:\(tool.name):\(item.id)"
+                    case .interrupted:
+                        return "interrupted:\(item.id)"
+                    }
+                }.joined(separator: ",")
+                await logMonitorEvent(
+                    level: .warning,
+                    hostId: hostId,
+                    method: "thread/resume",
+                    threadId: state.threadId,
+                    turnId: state.activeTurnId,
+                    message: "Resumed remote plan thread without pending interaction",
+                    payload: "phase=\(state.phase.description) canSend=\(state.canSendMessage) historyTail=[\(recentHistory)]"
+                )
+            }
             return state
         } catch {
             let presentableError = presentableRemoteError(error, hostId: hostId)
@@ -1876,7 +1903,7 @@ final class RemoteSessionMonitor: ObservableObject {
             approvalsReviewer: response.approvalsReviewer,
             sandboxPolicy: response.sandbox,
             serviceTier: response.serviceTier,
-            collaborationMode: nil
+            collaborationMode: response.collaborationMode
         )
     }
 
@@ -1888,7 +1915,7 @@ final class RemoteSessionMonitor: ObservableObject {
             approvalsReviewer: response.approvalsReviewer,
             sandboxPolicy: response.sandbox,
             serviceTier: response.serviceTier,
-            collaborationMode: nil
+            collaborationMode: response.collaborationMode
         )
     }
 
