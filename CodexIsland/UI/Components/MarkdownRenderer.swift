@@ -5,8 +5,21 @@
 //  Markdown renderer using swift-markdown for efficient parsing
 //
 
+import Foundation
 import Markdown
 import SwiftUI
+
+enum MarkdownListItemRenderer {
+    static func renderableChildren(for item: ListItem) -> [Markup] {
+        item.children.compactMap { child in
+            if let paragraph = child as? Paragraph {
+                let text = paragraph.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty else { return nil }
+            }
+            return child
+        }
+    }
+}
 
 // MARK: - Document Cache
 
@@ -136,8 +149,12 @@ private struct BlockRenderer: View {
 
     @ViewBuilder
     private func unorderedListView(_ list: UnorderedList) -> some View {
+        let items = list.listItems.compactMap { item -> [Markup]? in
+            let children = MarkdownListItemRenderer.renderableChildren(for: item)
+            return children.isEmpty ? nil : children
+        }
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(list.listItems.enumerated()), id: \.offset) { _, item in
+            ForEach(Array(items.enumerated()), id: \.offset) { _, itemChildren in
                 HStack(alignment: .top, spacing: 6) {
                     SwiftUI.Text("•")
                         .font(.system(size: fontSize))
@@ -145,7 +162,7 @@ private struct BlockRenderer: View {
                         .frame(width: 12, alignment: .center)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
+                        ForEach(Array(itemChildren.enumerated()), id: \.offset) { _, child in
                             if let para = child as? Paragraph {
                                 InlineRenderer(children: Array(para.inlineChildren), baseColor: baseColor, fontSize: fontSize)
                             } else {
@@ -160,8 +177,12 @@ private struct BlockRenderer: View {
 
     @ViewBuilder
     private func orderedListView(_ list: OrderedList) -> some View {
+        let items = list.listItems.compactMap { item -> [Markup]? in
+            let children = MarkdownListItemRenderer.renderableChildren(for: item)
+            return children.isEmpty ? nil : children
+        }
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(list.listItems.enumerated()), id: \.offset) { index, item in
+            ForEach(Array(items.enumerated()), id: \.offset) { index, itemChildren in
                 HStack(alignment: .top, spacing: 6) {
                     SwiftUI.Text("\(index + 1).")
                         .font(.system(size: fontSize))
@@ -169,7 +190,7 @@ private struct BlockRenderer: View {
                         .frame(width: 20, alignment: .trailing)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(item.children.enumerated()), id: \.offset) { _, child in
+                        ForEach(Array(itemChildren.enumerated()), id: \.offset) { _, child in
                             if let para = child as? Paragraph {
                                 InlineRenderer(children: Array(para.inlineChildren), baseColor: baseColor, fontSize: fontSize)
                             } else {

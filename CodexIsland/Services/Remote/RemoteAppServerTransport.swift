@@ -155,7 +155,10 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
         forward: @escaping @Sendable (String) async -> Void
     ) {
         let data = handle.availableData
-        guard !data.isEmpty else { return }
+        guard !data.isEmpty else {
+            flushResidualBuffer(&buffer, forward: forward)
+            return
+        }
 
         buffer.append(data)
         let newline = Data([0x0A])
@@ -167,6 +170,24 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
             Task {
                 await forward(line)
             }
+        }
+    }
+
+    private func flushResidualBuffer(
+        _ buffer: inout Data,
+        forward: @escaping @Sendable (String) async -> Void
+    ) {
+        guard !buffer.isEmpty else { return }
+        defer { buffer.removeAll(keepingCapacity: false) }
+
+        guard let line = String(data: buffer, encoding: .utf8)?
+            .trimmingCharacters(in: .newlines),
+              !line.isEmpty else {
+            return
+        }
+
+        Task {
+            await forward(line)
         }
     }
 }

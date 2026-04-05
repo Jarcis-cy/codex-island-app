@@ -446,23 +446,31 @@ final class RemoteSessionMonitor: ObservableObject {
     }
 
     func refreshHostNow(id: String) async throws {
-        guard let connection = connections[id] else { throw RemoteSessionError.notConnected }
+        guard let connection = connections[id] else { throw connectionAvailabilityError(hostId: id) }
         try await connection.refreshThreads()
         hostActionErrors.removeValue(forKey: id)
     }
 
     func listModels(hostId: String, includeHidden: Bool = false) async throws -> [RemoteAppServerModel] {
         guard let connection = connections[hostId] else {
-            throw RemoteSessionError.notConnected
+            throw connectionAvailabilityError(hostId: hostId)
         }
-        return try await connection.listModels(includeHidden: includeHidden)
+        do {
+            return try await connection.listModels(includeHidden: includeHidden)
+        } catch {
+            throw presentableRemoteError(error, hostId: hostId)
+        }
     }
 
     func listCollaborationModes(hostId: String) async throws -> [RemoteAppServerCollaborationModeMask] {
         guard let connection = connections[hostId] else {
-            throw RemoteSessionError.notConnected
+            throw connectionAvailabilityError(hostId: hostId)
         }
-        return try await connection.listCollaborationModes()
+        do {
+            return try await connection.listCollaborationModes()
+        } catch {
+            throw presentableRemoteError(error, hostId: hostId)
+        }
     }
 
     func addHost() {
@@ -574,7 +582,7 @@ final class RemoteSessionMonitor: ObservableObject {
             throw RemoteSessionError.invalidConfiguration("Remote host no longer exists")
         }
         guard let connection = connections[hostId] else {
-            throw RemoteSessionError.notConnected
+            throw connectionAvailabilityError(hostId: hostId)
         }
         let requestedDefaultCwd = defaultCwdOverride ?? host.defaultCwd
         let normalizedDefaultCwd = try await connection.normalizeCwd(requestedDefaultCwd)
@@ -622,6 +630,7 @@ final class RemoteSessionMonitor: ObservableObject {
             }
             return state
         } catch {
+            let presentableError = presentableRemoteError(error, hostId: hostId)
             markStateChanged()
             if case .timeout = (error as? RemoteSessionError) {
                 try? await connection.refreshThreads()
@@ -641,21 +650,21 @@ final class RemoteSessionMonitor: ObservableObject {
                     return recovered
                 }
             }
-            hostActionErrors[hostId] = error.localizedDescription
+            hostActionErrors[hostId] = presentableError.localizedDescription
             await logMonitorEvent(
                 level: .error,
                 hostId: hostId,
                 method: "thread/start",
                 message: "Failed to start remote thread",
-                payload: error.localizedDescription
+                payload: presentableError.localizedDescription
             )
-            throw error
+            throw presentableError
         }
     }
 
     func openThread(hostId: String, threadId: String) async throws -> RemoteThreadState {
         guard let connection = connections[hostId] else {
-            throw RemoteSessionError.notConnected
+            throw connectionAvailabilityError(hostId: hostId)
         }
         guard let host = hosts.first(where: { $0.id == hostId }) else {
             throw RemoteSessionError.invalidConfiguration("Remote host no longer exists")
@@ -693,23 +702,24 @@ final class RemoteSessionMonitor: ObservableObject {
             }
             return state
         } catch {
+            let presentableError = presentableRemoteError(error, hostId: hostId)
             markStateChanged()
-            hostActionErrors[hostId] = error.localizedDescription
+            hostActionErrors[hostId] = presentableError.localizedDescription
             await logMonitorEvent(
                 level: .error,
                 hostId: hostId,
                 method: "thread/resume",
                 threadId: threadId,
                 message: "Failed to open remote thread",
-                payload: error.localizedDescription
+                payload: presentableError.localizedDescription
             )
-            throw error
+            throw presentableError
         }
     }
 
     func sendMessage(thread: RemoteThreadState, text: String) async throws {
         guard let connection = connections[thread.hostId] else {
-            throw RemoteSessionError.notConnected
+            throw connectionAvailabilityError(hostId: thread.hostId)
         }
         let optimisticItemId = appendOptimisticUserMessage(thread: thread, text: text)
         defer {
@@ -751,6 +761,7 @@ final class RemoteSessionMonitor: ObservableObject {
                 )
                 return
             }
+            let presentableError = presentableRemoteError(error, hostId: thread.hostId)
             removeOptimisticUserMessage(
                 hostId: thread.hostId,
                 threadId: thread.threadId,
@@ -763,9 +774,9 @@ final class RemoteSessionMonitor: ObservableObject {
                 threadId: thread.threadId,
                 turnId: thread.activeTurnId,
                 message: "Remote message send failed",
-                payload: error.localizedDescription
+                payload: presentableError.localizedDescription
             )
-            throw error
+            throw presentableError
         }
     }
 
@@ -899,6 +910,16 @@ final class RemoteSessionMonitor: ObservableObject {
         switch event {
         case .connectionState(let hostId, let state):
             hostStates[hostId] = state
+            switch state {
+            case .connected:
+                hostActionErrors.removeValue(forKey: hostId)
+            case .failed(let message):
+                if !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    hostActionErrors[hostId] = message
+                }
+            case .connecting, .disconnected:
+                break
+            }
             for index in threads.indices where threads[index].hostId == hostId {
                 threads[index].connectionState = state
             }
@@ -1330,6 +1351,36 @@ final class RemoteSessionMonitor: ObservableObject {
         threads[threadIndex].lastActivity = Date()
         threads[threadIndex].updatedAt = Date()
         updateDerivedFields(at: threadIndex)
+    }
+
+    private func connectionAvailabilityError(hostId: String) -> RemoteSessionError {
+        switch hostStates[hostId] {
+        case .failed(let message):
+            let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            return .transport(trimmed.isEmpty ? "Remote host connection failed" : trimmed)
+        case .connecting:
+            return .transport("Remote host is still connecting")
+        case .disconnected:
+            return .transport("Remote host is disconnected. Reconnect and retry.")
+        case .connected:
+            return .notConnected
+        case nil:
+            if let actionError = hostActionErrors[hostId],
+               !actionError.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return .transport(actionError)
+            }
+            return .notConnected
+        }
+    }
+
+    private func presentableRemoteError(_ error: Error, hostId: String) -> Error {
+        guard let remoteError = error as? RemoteSessionError else { return error }
+        switch remoteError {
+        case .notConnected:
+            return connectionAvailabilityError(hostId: hostId)
+        default:
+            return remoteError
+        }
     }
 
     @discardableResult
@@ -2744,6 +2795,12 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
         try await resolveRemoteCwd(cwd, treatHomeAsNilPayload: true)
     }
 
+    private func normalizedRemoteDirectoryPath(_ path: String) -> String {
+        let standardized = URL(fileURLWithPath: path, isDirectory: true).standardizedFileURL.path
+        guard standardized != "/" else { return standardized }
+        return standardized.hasSuffix("/") ? standardized : standardized + "/"
+    }
+
     private func resolveRemoteCwd(_ cwd: String, treatHomeAsNilPayload: Bool) async throws -> String? {
         let trimmed = cwd.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
@@ -2761,13 +2818,14 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
             guard let home = try await resolveRemoteHomeDirectory(), !home.isEmpty else {
                 throw RemoteSessionError.invalidConfiguration("Could not resolve remote home directory for `~`")
             }
+            let resolvedHome = normalizedRemoteDirectoryPath(home)
             await log(
                 level: .debug,
                 category: "remote.connection.cwd",
                 message: "Resolved remote home directory for display filter",
-                payload: "\(trimmed) -> \(home)"
+                payload: "\(trimmed) -> \(resolvedHome)"
             )
-            return home
+            return resolvedHome
         }
 
         if trimmed.hasPrefix("~/") {
@@ -2775,7 +2833,9 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
                 throw RemoteSessionError.invalidConfiguration("Could not resolve remote home directory for `~`")
             }
             let suffix = String(trimmed.dropFirst(2))
-            let resolved = URL(fileURLWithPath: home).appendingPathComponent(suffix).path
+            let resolved = normalizedRemoteDirectoryPath(
+                URL(fileURLWithPath: home, isDirectory: true).appendingPathComponent(suffix, isDirectory: true).path
+            )
             await log(
                 level: .debug,
                 category: "remote.connection.cwd",
@@ -2783,6 +2843,10 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
                 payload: "\(trimmed) -> \(resolved)"
             )
             return resolved
+        }
+
+        if trimmed.hasPrefix("/") {
+            return normalizedRemoteDirectoryPath(trimmed)
         }
 
         return trimmed

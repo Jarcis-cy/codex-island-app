@@ -56,6 +56,19 @@ nonisolated enum RemoteHostConnectionState: Equatable, Sendable {
         return false
     }
 
+    var feedbackMessage: String? {
+        switch self {
+        case .connected:
+            return nil
+        case .connecting:
+            return "Remote host is connecting..."
+        case .disconnected:
+            return "Remote host is disconnected. Reconnect and retry."
+        case .failed(let message):
+            return message.isEmpty ? "Remote host connection failed" : message
+        }
+    }
+
     var statusText: String {
         switch self {
         case .disconnected:

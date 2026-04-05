@@ -1,4 +1,5 @@
 import XCTest
+import Markdown
 @testable import Codex_Island
 
 @MainActor
@@ -115,6 +116,18 @@ final class ChatHistoryManagerTests: XCTestCase {
                 sessionId: reboundSession.sessionId
             )
         )
+    }
+
+    func testMarkdownListRendererSkipsEmptyListItems() throws {
+        let document = Document(parsing: "- \n- 第一条\n-\n- 第二条")
+        let list = try XCTUnwrap(Array(document.children).first as? UnorderedList)
+
+        let renderableCounts = Array(list.listItems.map { item in
+            MarkdownListItemRenderer.renderableChildren(for: item).count
+        })
+
+        XCTAssertEqual(renderableCounts, [0, 1, 0, 1])
+        XCTAssertEqual(renderableCounts.filter { $0 > 0 }.count, 2)
     }
 
     private func makeHookEvent(

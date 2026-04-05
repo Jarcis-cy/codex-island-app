@@ -132,6 +132,55 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         XCTAssertEqual(stopCount, 1)
     }
 
+    func testStartThreadNormalizesAbsoluteCwdToDirectoryPath() async throws {
+        let transport = TestTransport()
+        let logger = TestDiagnosticsLogger()
+        let recorder = RemoteEventRecorder()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+
+        let connection = RemoteAppServerConnection(
+            host: host,
+            emit: { event in await recorder.append(event) },
+            dependencies: RemoteAppServerConnectionDependencies(
+                transportFactory: { _ in transport },
+                processExecutor: TestProcessExecutor(),
+                diagnosticsLogger: logger,
+                requestTimeout: .seconds(1),
+                initialRefreshDelay: .seconds(60),
+                refreshInterval: .seconds(60),
+                sleep: { duration in
+                    try await Task.sleep(for: duration)
+                }
+            )
+        )
+
+        try await connection.installTransportForTesting(transport)
+
+        async let startTask: RemoteAppServerThreadStartResponse = connection.startThread(defaultCwd: "/srv/dhr")
+
+        try await waitUntil {
+            let lines = await transport.sentLines
+            return lines.count == 1
+        }
+
+        let sentLines = await transport.sentLines
+        let line = try XCTUnwrap(sentLines.first)
+        let payload = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any])
+        let params = try XCTUnwrap(payload["params"] as? [String: Any])
+        XCTAssertEqual(payload["method"] as? String, "thread/start")
+        XCTAssertEqual(params["cwd"] as? String, "/srv/dhr/")
+
+        try await transport.emitStdout(
+            makeEnvelopeJSON(
+                id: try extractID(from: line),
+                result: threadResponsePayload(id: "thread-new", preview: "New")
+            )
+        )
+
+        _ = try await startTask
+        await connection.stop()
+    }
+
     func testQueuedRequestsWaitForPreviousResponse() async throws {
         let transport = TestTransport()
         let logger = TestDiagnosticsLogger()

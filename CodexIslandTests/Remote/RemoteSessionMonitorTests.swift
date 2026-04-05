@@ -145,6 +145,45 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertTrue(updated.history.isEmpty)
     }
 
+    func testConnectionFailureDisablesSendAndSurfacesFailureMessage() async throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        let baseThread = makeThread(id: "thread-1", preview: "Preview", status: .idle)
+
+        connection.sendMessageHandler = { _, _, _, _ in
+            throw RemoteSessionError.notConnected
+        }
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .threadUpsert(hostId: host.id, thread: baseThread))
+        monitor.apply(event: .connectionState(hostId: host.id, state: .failed("SSH exited with code 255")))
+
+        let thread = try XCTUnwrap(monitor.threads.first)
+        XCTAssertFalse(thread.canSendMessage)
+        XCTAssertEqual(thread.connectionFeedbackMessage, "SSH exited with code 255")
+        XCTAssertEqual(monitor.hostActionErrors[host.id], "SSH exited with code 255")
+
+        do {
+            try await monitor.sendMessage(thread: thread, text: "hi")
+            XCTFail("Expected sendMessage to fail")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "SSH exited with code 255")
+        }
+    }
+
     func testTurnPlanUpdatedAddsTodoWriteHistoryItem() throws {
         let logger = TestDiagnosticsLogger()
         let connection = FakeRemoteConnection()

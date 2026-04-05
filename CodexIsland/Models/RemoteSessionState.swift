@@ -159,11 +159,15 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
     }
 
     var canStartTurn: Bool {
-        primaryPendingInteraction == nil && (phase == .idle || phase == .waitingForInput)
+        connectionState.isConnected &&
+        primaryPendingInteraction == nil &&
+        (phase == .idle || phase == .waitingForInput)
     }
 
     var canSendMessage: Bool {
-        primaryPendingInteraction == nil && (canStartTurn || canSteerTurn)
+        connectionState.isConnected &&
+        primaryPendingInteraction == nil &&
+        (canStartTurn || canSteerTurn)
     }
 
     var needsHydration: Bool {
@@ -171,7 +175,7 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
     }
 
     var canInterrupt: Bool {
-        phase == .processing || phase == .compacting
+        connectionState.isConnected && (phase == .processing || phase == .compacting)
     }
 
     var approvalToolName: String? {
@@ -208,6 +212,10 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
 
     var needsAttention: Bool {
         primaryPendingInteraction != nil || phase.needsAttention
+    }
+
+    var connectionFeedbackMessage: String? {
+        connectionState.feedbackMessage
     }
 }
 

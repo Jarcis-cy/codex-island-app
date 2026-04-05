@@ -389,6 +389,10 @@ struct RemoteChatView: View {
                 planModeBanner
             }
 
+            if let connectionMessage = thread.connectionFeedbackMessage {
+                slashFeedbackBanner(message: connectionMessage)
+            }
+
             if let activeSlashPanel {
                 slashPanel(activeSlashPanel)
             } else if !matchingSlashCommands.isEmpty {
@@ -801,6 +805,9 @@ struct RemoteChatView: View {
     }
 
     private var inputPrompt: String {
+        if let connectionMessage = thread.connectionFeedbackMessage {
+            return connectionMessage
+        }
         if thread.canSteerTurn {
             return "Steer active turn..."
         }
