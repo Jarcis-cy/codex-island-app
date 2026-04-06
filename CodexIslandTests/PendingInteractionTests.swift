@@ -122,6 +122,140 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testLocalApprovalResponseReturnsFailureWhenAppServerRespondFails() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        connection.respondActionHandler = { _, _ in
+            throw RemoteSessionError.transport("approval response failed")
+        }
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        localMonitor.apply(event: .threadUpsert(
+            hostId: host.id,
+            thread: makeThread(
+                id: "session-1",
+                status: .active(activeFlags: [.waitingOnUserInput])
+            )
+        ))
+        localMonitor.apply(event: .approval(
+            hostId: host.id,
+            threadId: "session-1",
+            approval: RemotePendingApproval(
+                id: "approval-1",
+                requestId: .int(1),
+                kind: .commandExecution,
+                itemId: "item-1",
+                threadId: "session-1",
+                turnId: "turn-1",
+                title: "Command Execution",
+                detail: "pwd",
+                requestedPermissions: .none,
+                availableActions: [.allow, .deny]
+            )
+        ))
+        await Task.yield()
+
+        let result = await sessionMonitor.respond(sessionId: "session-1", action: .allow)
+
+        XCTAssertEqual(result, .failed("approval response failed"))
+    }
+
+    @MainActor
+    func testLocalApprovalResponseReturnsInitializingWhileThreadLoadPending() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        connection.refreshThreadsHandler = {
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        connection.resumeThreadHandler = { threadId, _ in
+            makeThreadResumeResponse(thread: makeThread(id: threadId, preview: "Recovered", cwd: "/tmp/project"))
+        }
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(
+            sessionId: "session-1",
+            transcriptPath: "/Users/test/.codex/sessions/2026/04/03/rollout-2026-04-03T14-40-04-session-1.jsonl",
+            cwd: "/tmp/project"
+        )))
+        await Task.yield()
+
+        await SessionStore.shared.process(.fileUpdated(FileUpdatePayload(
+            sessionId: "session-1",
+            cwd: "/tmp/project",
+            messages: [],
+            isIncremental: true,
+            completedToolIds: [],
+            toolResults: [:],
+            structuredResults: [:],
+            pendingInteractions: [
+                .approval(PendingApprovalInteraction(
+                    id: "approval-1",
+                    title: "Command Execution",
+                    kind: .commandExecution,
+                    detail: "pwd",
+                    requestedPermissions: .none,
+                    availableActions: [.allow, .deny],
+                    transport: .remoteAppServer(requestId: .int(1))
+                ))
+            ],
+            transcriptPhase: .waitingForInput
+        )))
+        await Task.yield()
+
+        async let firstAttempt = sessionMonitor.sendMessageResult(sessionId: "session-1", text: "prime load")
+        try? await Task.sleep(for: .milliseconds(50))
+        let approvalResult = await sessionMonitor.respond(sessionId: "session-1", action: .allow)
+        _ = await firstAttempt
+
+        XCTAssertEqual(approvalResult, .initializing)
+    }
+
+    @MainActor
     func testLocalHookSessionStaysIdleUntilAppServerThreadBinds() async throws {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(

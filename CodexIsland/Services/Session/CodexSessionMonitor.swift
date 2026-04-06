@@ -124,7 +124,9 @@ class CodexSessionMonitor: ObservableObject {
     // MARK: - Permission Handling
 
     func approvePermission(sessionId: String) {
-        respond(sessionId: sessionId, action: .allow)
+        Task {
+            _ = await respond(sessionId: sessionId, action: .allow)
+        }
     }
 
     func denyPermission(sessionId: String, reason: String?) {
@@ -148,40 +150,52 @@ class CodexSessionMonitor: ObservableObject {
             return
         }
 
-        respond(sessionId: sessionId, action: .deny)
+        Task {
+            _ = await respond(sessionId: sessionId, action: .deny)
+        }
     }
 
-    func respond(sessionId: String, action: PendingApprovalAction) {
-        Task {
-            guard let session = await sessionForInteraction(sessionId: sessionId),
-                  let interaction = pendingInteraction(for: session) else {
-                return
-            }
+    func respond(sessionId: String, action: PendingApprovalAction) async -> LocalSendResult {
+        guard let session = await sessionForInteraction(sessionId: sessionId),
+              let interaction = pendingInteraction(for: session) else {
+            return .failed("Approval request is no longer available.")
+        }
 
-            switch interaction {
-            case .approval(let approval):
-                switch approval.transport {
-                case .remoteAppServer:
-                    guard let thread = await ensureAppServerThread(for: session) else { return }
-                    try? await localAppServerMonitor.respond(thread: thread, action: action)
-                case .hookPermission(let toolUseId):
-                    let decision = action == .allow ? "allow" : "deny"
-                    HookSocketServer.shared.respondToPermission(toolUseId: toolUseId, decision: decision)
-                    if action == .allow {
-                        await SessionStore.shared.process(
-                            .permissionApproved(sessionId: sessionId, toolUseId: toolUseId)
-                        )
-                    } else {
-                        await SessionStore.shared.process(
-                            .permissionDenied(sessionId: sessionId, toolUseId: toolUseId, reason: nil)
-                        )
+        switch interaction {
+        case .approval(let approval):
+            switch approval.transport {
+            case .remoteAppServer:
+                switch await ensureAppServerThreadResult(for: session) {
+                case .ready(let thread):
+                    do {
+                        try await localAppServerMonitor.respond(thread: thread, action: action)
+                        return .sent
+                    } catch {
+                        return .failed(error.localizedDescription)
                     }
-                case .codexLocal:
-                    return
+                case .initializing:
+                    return .initializing
+                case .failed(let error):
+                    return .failed(error.localizedDescription)
                 }
-            case .userInput:
-                break
+            case .hookPermission(let toolUseId):
+                let decision = action == .allow ? "allow" : "deny"
+                HookSocketServer.shared.respondToPermission(toolUseId: toolUseId, decision: decision)
+                if action == .allow {
+                    await SessionStore.shared.process(
+                        .permissionApproved(sessionId: sessionId, toolUseId: toolUseId)
+                    )
+                } else {
+                    await SessionStore.shared.process(
+                        .permissionDenied(sessionId: sessionId, toolUseId: toolUseId, reason: nil)
+                    )
+                }
+                return .sent
+            case .codexLocal:
+                return .failed("Approval request is no longer available.")
             }
+        case .userInput:
+            return .failed("Approval request is no longer available.")
         }
     }
 

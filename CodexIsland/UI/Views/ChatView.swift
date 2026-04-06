@@ -1077,7 +1077,15 @@ struct ChatView: View {
 
     private func respondToApproval(_ action: PendingApprovalAction) {
         guard let latestSession = latestSession() else { return }
-        sessionMonitor.respond(sessionId: latestSession.sessionId, action: action)
+        Task {
+            let result = await sessionMonitor.respond(sessionId: latestSession.sessionId, action: action)
+            guard case .sent = result else {
+                await MainActor.run {
+                    showSendFailure(sendFailureMessage(for: result))
+                }
+                return
+            }
+        }
     }
 
     private func respondToQuestions(_ answers: PendingInteractionAnswerPayload) async -> Bool {
