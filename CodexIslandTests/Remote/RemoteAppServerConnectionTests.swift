@@ -2,6 +2,7 @@ import XCTest
 @testable import Codex_Island
 
 final class RemoteAppServerConnectionTests: XCTestCase {
+    // 这些回归主要锁连接层的序列化请求队列、失败态发射规则，以及 RPC 参数编码是否与 app-server 约定一致。
     func testBackgroundThreadListTimeoutDoesNotEmitFailedState() async throws {
         let transport = TestTransport()
         let logger = TestDiagnosticsLogger()
@@ -132,6 +133,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         XCTAssertEqual(stopCount, 1)
     }
 
+    // thread/start 前要把绝对 cwd 规范成目录路径，避免远端把文件路径误当成工作目录。
     func testStartThreadNormalizesAbsoluteCwdToDirectoryPath() async throws {
         let transport = TestTransport()
         let logger = TestDiagnosticsLogger()
@@ -246,6 +248,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         await connection.stop()
     }
 
+    // turn/start 既发消息，也携带 model / sandbox / collaboration 覆盖项；这里锁 JSON 编码细节。
     func testSendMessageIncludesTurnStartOverrides() async throws {
         let transport = TestTransport()
         let logger = TestDiagnosticsLogger()
@@ -331,6 +334,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         await connection.stop()
     }
 
+    // 远端模型面板依赖 model/list，而不是 thread/list；这里锁 RPC 方法名和返回解码。
     func testListModelsUsesModelsListRpc() async throws {
         let transport = TestTransport()
         let logger = TestDiagnosticsLogger()
@@ -395,6 +399,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         await connection.stop()
     }
 
+    // 测试里直接从发出的 JSON-RPC envelope 取请求 id，用于把模拟响应精确送回对应 await。
     private func extractID(from line: String) throws -> Int {
         let data = Data(line.utf8)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
@@ -407,6 +412,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         return object["method"] as? String
     }
 
+    // 统一最小 thread payload，避免每个测试手写一份 app-server thread JSON。
     private func threadPayload(id: String, preview: String) -> [String: Any] {
         [
             "id": id,
@@ -424,6 +430,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         ]
     }
 
+    // thread/start / thread/resume 都返回这组包裹字段，集中复用能让协议断言保持一致。
     private func threadResponsePayload(id: String, preview: String) -> [String: Any] {
         [
             "thread": threadPayload(id: id, preview: preview),
