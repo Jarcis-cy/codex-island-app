@@ -2,6 +2,8 @@ import XCTest
 @testable import Codex_Island
 
 final class CodexConversationParserTests: XCTestCase {
+    private let sessionId = "test-session"
+
     // 这里主要锁 transcript parser 的几类高风险输入：runtime info、plan follow-up、扁平/嵌套 event_msg 格式。
     func testRuntimeInfoParsesModelAndTokenUsage() async throws {
         let transcript = """
@@ -11,12 +13,7 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T01:00:03Z","type":"event_msg","payload":{"type":"token_count","payload":{"info":{"total_token_usage":{"input_tokens":120000,"cached_input_tokens":10000,"output_tokens":5000,"reasoning_output_tokens":800,"total_tokens":125000},"last_token_usage":{"input_tokens":95000,"cached_input_tokens":5000,"output_tokens":5000,"reasoning_output_tokens":1000,"total_tokens":100000},"model_context_window":950000}}}}
         """
 
-        let url = try makeTranscriptFile(contents: transcript)
-
-        let runtimeInfo = await CodexConversationParser.shared.runtimeInfo(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
-        )
+        let runtimeInfo = try await runtimeInfo(from: transcript)
 
         XCTAssertEqual(runtimeInfo.modelProvider, "openai")
         XCTAssertEqual(runtimeInfo.model, "gpt-5.4")
@@ -34,16 +31,7 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T08:43:50Z","type":"response_item","payload":{"type":"function_call","name":"request_user_input","arguments":"{\"questions\":[{\"header\":\"测试类型\",\"id\":\"test_type_round4\",\"question\":\"这轮你想验证哪种提问风格？\",\"options\":[{\"label\":\"常规澄清 (Recommended)\",\"description\":\"标准 Plan Mode 风格，问题直接、信息密度适中。\"},{\"label\":\"强约束决策\",\"description\":\"每题更偏实现取舍和边界锁定。\"},{\"label\":\"轻量确认\",\"description\":\"问题更短，适合快速点选。\"}]},{\"header\":\"选项布局\",\"id\":\"option_layout_round4\",\"question\":\"你这轮更想观察哪种选项组织方式？\",\"options\":[{\"label\":\"推荐项优先 (Recommended)\",\"description\":\"把默认建议放在第一位，最符合常规用法。\"},{\"label\":\"对立取舍\",\"description\":\"突出两三种互斥方案之间的差异。\"},{\"label\":\"结果导向\",\"description\":\"按后续动作来组织选项，而不是按主题。\"}]}]}","call_id":"call_plan_options"}}
         """#
 
-        let url = try makeTranscriptFile(contents: transcript)
-
-        let interactions = await CodexConversationParser.shared.pendingInteractions(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
-        )
-
-        guard case .userInput(let interaction)? = interactions.first else {
-            return XCTFail("Expected user input interaction")
-        }
+        let interaction = try await firstUserInputInteraction(from: transcript)
 
         XCTAssertEqual(interaction.questions.count, 2)
         XCTAssertEqual(interaction.questions[0].header, "测试类型")
@@ -61,24 +49,17 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T08:44:11Z","type":"event_msg","payload":{"type":"request_user_input","payload":{"call_id":"call_exit_plan_followup","turn_id":"turn-1","questions":[{"header":"下一步","id":"next_step","question":"要执行这份报告，还是继续留在 Plan 模式里提问？","options":[{"label":"执行这份报告 (Recommended)","description":"退出 Plan 模式并按这份方案继续。"},{"label":"继续在 Plan 模式提问","description":"保留当前 Plan 模式，继续补充澄清问题。"}]}]}}}
         """#
 
-        let url = try makeTranscriptFile(contents: transcript)
+        let interaction = try await firstUserInputInteraction(from: transcript)
 
-        let interactions = await CodexConversationParser.shared.pendingInteractions(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
+        assertPlanFollowupInteraction(
+            interaction,
+            id: "call_exit_plan_followup",
+            header: "下一步",
+            labels: [
+                "执行这份报告 (Recommended)",
+                "继续在 Plan 模式提问"
+            ]
         )
-
-        guard case .userInput(let interaction)? = interactions.first else {
-            return XCTFail("Expected user input interaction")
-        }
-
-        XCTAssertEqual(interaction.id, "call_exit_plan_followup")
-        XCTAssertEqual(interaction.questions.count, 1)
-        XCTAssertEqual(interaction.questions[0].header, "下一步")
-        XCTAssertEqual(interaction.questions[0].options.map(\.label), [
-            "执行这份报告 (Recommended)",
-            "继续在 Plan 模式提问"
-        ])
         XCTAssertEqual(interaction.transport, .codexLocal(callId: "call_exit_plan_followup", turnId: "turn-1"))
     }
 
@@ -91,19 +72,17 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T08:44:13Z","type":"event_msg","payload":{"type":"task_complete","payload":{"turn_id":"turn-1"}}}
         """#
 
-        let url = try makeTranscriptFile(contents: transcript)
+        let interaction = try await firstUserInputInteraction(from: transcript)
 
-        let interactions = await CodexConversationParser.shared.pendingInteractions(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
+        assertPlanFollowupInteraction(
+            interaction,
+            id: "call_exit_plan_followup",
+            header: "下一步",
+            labels: [
+                "执行这份报告 (Recommended)",
+                "继续在 Plan 模式提问"
+            ]
         )
-
-        guard case .userInput(let interaction)? = interactions.first else {
-            return XCTFail("Expected user input interaction")
-        }
-
-        XCTAssertEqual(interaction.id, "call_exit_plan_followup")
-        XCTAssertEqual(interaction.questions.count, 1)
     }
 
     // 一旦新任务开始，旧 plan follow-up 必须被清空，避免 UI 继续显示过期选项。
@@ -114,12 +93,7 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T08:44:14Z","type":"event_msg","payload":{"type":"task_started","payload":{"turn_id":"turn-2","model_context_window":950000,"collaboration_mode_kind":"default"}}}
         """#
 
-        let url = try makeTranscriptFile(contents: transcript)
-
-        let interactions = await CodexConversationParser.shared.pendingInteractions(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
-        )
+        let interactions = try await pendingInteractions(from: transcript)
 
         XCTAssertTrue(interactions.isEmpty)
     }
@@ -133,20 +107,8 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T09:17:31Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}
         """#
 
-        let url = try makeTranscriptFile(contents: transcript)
-
-        let interactions = await CodexConversationParser.shared.pendingInteractions(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
-        )
-        let messages = await CodexConversationParser.shared.parseFullConversation(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
-        )
-
-        guard case .userInput(let interaction)? = interactions.first else {
-            return XCTFail("Expected synthetic plan follow-up interaction")
-        }
+        let interaction = try await firstUserInputInteraction(from: transcript)
+        let messages = try await parsedMessages(from: transcript)
 
         XCTAssertEqual(interaction.questions.first?.question, "Implement this plan?")
         XCTAssertEqual(interaction.questions.first?.options.map(\.label), [
@@ -164,16 +126,7 @@ final class CodexConversationParserTests: XCTestCase {
         {"timestamp":"2026-04-03T08:44:11Z","type":"event_msg","payload":{"type":"request_user_input","call_id":"call_exit_plan_followup","turn_id":"turn-1","questions":[{"header":"下一步","id":"next_step","question":"要执行这份报告，还是继续留在 Plan 模式里提问？","options":[{"label":"执行这份报告 (Recommended)","description":"退出 Plan 模式并按这份方案继续。"},{"label":"继续在 Plan 模式提问","description":"保留当前 Plan 模式，继续补充澄清问题。"}]}]}}
         """#
 
-        let url = try makeTranscriptFile(contents: transcript)
-
-        let interactions = await CodexConversationParser.shared.pendingInteractions(
-            sessionId: UUID().uuidString,
-            transcriptPath: url.path
-        )
-
-        guard case .userInput(let interaction)? = interactions.first else {
-            return XCTFail("Expected user input interaction")
-        }
+        let interaction = try await firstUserInputInteraction(from: transcript)
 
         XCTAssertEqual(interaction.id, "call_exit_plan_followup")
         XCTAssertEqual(interaction.questions.first?.question, "要执行这份报告，还是继续留在 Plan 模式里提问？")
@@ -193,4 +146,53 @@ final class CodexConversationParserTests: XCTestCase {
         }
         return fileURL
     }
+
+    private func runtimeInfo(from transcript: String) async throws -> SessionRuntimeInfo {
+        let url = try makeTranscriptFile(contents: transcript)
+        return await CodexConversationParser.shared.runtimeInfo(
+            sessionId: sessionId,
+            transcriptPath: url.path
+        )
+    }
+
+    private func pendingInteractions(from transcript: String) async throws -> [PendingInteraction] {
+        let url = try makeTranscriptFile(contents: transcript)
+        return await CodexConversationParser.shared.pendingInteractions(
+            sessionId: sessionId,
+            transcriptPath: url.path
+        )
+    }
+
+    private func firstUserInputInteraction(from transcript: String) async throws -> PendingUserInputInteraction {
+        let interactions = try await pendingInteractions(from: transcript)
+        guard case .userInput(let interaction)? = interactions.first else {
+            XCTFail("Expected user input interaction")
+            throw ParserTestError.missingUserInputInteraction
+        }
+        return interaction
+    }
+
+    private func parsedMessages(from transcript: String) async throws -> [ChatMessage] {
+        let url = try makeTranscriptFile(contents: transcript)
+        return await CodexConversationParser.shared.parseFullConversation(
+            sessionId: sessionId,
+            transcriptPath: url.path
+        )
+    }
+
+    private func assertPlanFollowupInteraction(
+        _ interaction: PendingUserInputInteraction,
+        id: String,
+        header: String,
+        labels: [String]
+    ) {
+        XCTAssertEqual(interaction.id, id)
+        XCTAssertEqual(interaction.questions.count, 1)
+        XCTAssertEqual(interaction.questions[0].header, header)
+        XCTAssertEqual(interaction.questions[0].options.map(\.label), labels)
+    }
+}
+
+private enum ParserTestError: Error {
+    case missingUserInputInteraction
 }
