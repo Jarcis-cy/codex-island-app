@@ -79,7 +79,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Mixpanel.mainInstance().track(event: "App Launched")
         Mixpanel.mainInstance().flush()
 
-        HookInstaller.installIfNeeded()
+        do {
+            try HookInstaller.installIfNeeded()
+        } catch {
+            print("Failed to install hooks: \(error.localizedDescription)")
+        }
         NSApplication.shared.setActivationPolicy(.accessory)
 
         windowManager = WindowManager()

@@ -1,0 +1,73 @@
+import XCTest
+@testable import Codex_Island
+
+final class HookInstallerTests: XCTestCase {
+    func testInstallIfNeededRestoresOriginalFilesWhenHooksConfigIsInvalid() throws {
+        let home = try makeTemporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let codexDir = home.appendingPathComponent(".codex", isDirectory: true)
+        let hooksDir = codexDir.appendingPathComponent("hooks", isDirectory: true)
+        try FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+
+        let existingScript = hooksDir.appendingPathComponent("codex-island-state.py")
+        let hooksConfig = codexDir.appendingPathComponent("hooks.json")
+        let configToml = codexDir.appendingPathComponent("config.toml")
+        let bundledScript = home.appendingPathComponent("bundled.py")
+
+        try Data("old-script".utf8).write(to: existingScript)
+        try Data("not-json".utf8).write(to: hooksConfig)
+        try "[features]\nother = true\n".write(to: configToml, atomically: true, encoding: .utf8)
+        try Data("new-script".utf8).write(to: bundledScript)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: existingScript.path)
+
+        XCTAssertThrowsError(
+            try HookInstaller.installIfNeeded(
+                homeDirectory: home,
+                bundledScriptURL: bundledScript
+            )
+        )
+
+        XCTAssertEqual(try String(contentsOf: existingScript, encoding: .utf8), "old-script")
+        XCTAssertEqual(try String(contentsOf: configToml, encoding: .utf8), "[features]\nother = true\n")
+        XCTAssertEqual(try String(contentsOf: hooksConfig, encoding: .utf8), "not-json")
+
+        let permissions = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: existingScript.path)[.posixPermissions] as? NSNumber
+        )
+        XCTAssertEqual(permissions.intValue, 0o644)
+    }
+
+    func testUninstallRestoresManagedScriptWhenHooksConfigIsInvalid() throws {
+        let home = try makeTemporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let codexDir = home.appendingPathComponent(".codex", isDirectory: true)
+        let hooksDir = codexDir.appendingPathComponent("hooks", isDirectory: true)
+        try FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+
+        let managedScript = hooksDir.appendingPathComponent("codex-island-state.py")
+        let hooksConfig = codexDir.appendingPathComponent("hooks.json")
+
+        try Data("managed-script".utf8).write(to: managedScript)
+        try Data("not-json".utf8).write(to: hooksConfig)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: managedScript.path)
+
+        XCTAssertThrowsError(try HookInstaller.uninstall(homeDirectory: home))
+
+        XCTAssertEqual(try String(contentsOf: managedScript, encoding: .utf8), "managed-script")
+        XCTAssertEqual(try String(contentsOf: hooksConfig, encoding: .utf8), "not-json")
+
+        let permissions = try XCTUnwrap(
+            FileManager.default.attributesOfItem(atPath: managedScript.path)[.posixPermissions] as? NSNumber
+        )
+        XCTAssertEqual(permissions.intValue, 0o755)
+    }
+
+    private func makeTemporaryHome() throws -> URL {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        return directory
+    }
+}

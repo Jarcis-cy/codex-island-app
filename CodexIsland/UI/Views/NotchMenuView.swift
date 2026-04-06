@@ -21,6 +21,7 @@ struct NotchMenuView: View {
     @State private var hooksInstalled: Bool = false
     @State private var launchAtLogin: Bool = false
     @State private var remoteDebugLogsEnabled: Bool = false
+    @State private var hooksErrorMessage: String?
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -69,13 +70,27 @@ struct NotchMenuView: View {
                     label: "Hooks",
                     isOn: hooksInstalled
                 ) {
-                    if hooksInstalled {
-                        HookInstaller.uninstall()
-                        hooksInstalled = false
-                    } else {
-                        HookInstaller.installIfNeeded()
-                        hooksInstalled = true
+                    do {
+                        if hooksInstalled {
+                            try HookInstaller.uninstall()
+                        } else {
+                            try HookInstaller.installIfNeeded()
+                        }
+                        hooksInstalled = HookInstaller.isInstalled()
+                        hooksErrorMessage = nil
+                    } catch {
+                        hooksInstalled = HookInstaller.isInstalled()
+                        hooksErrorMessage = error.localizedDescription
                     }
+                }
+
+                if let hooksErrorMessage, !hooksErrorMessage.isEmpty {
+                    Text(hooksErrorMessage)
+                        .font(.system(size: 11))
+                        .foregroundColor(TerminalColors.red)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 2)
                 }
 
                 MenuToggleRow(
@@ -146,6 +161,7 @@ struct NotchMenuView: View {
 
     private func refreshStates() {
         hooksInstalled = HookInstaller.isInstalled()
+        hooksErrorMessage = nil
         launchAtLogin = SMAppService.mainApp.status == .enabled
         remoteDebugLogsEnabled = AppSettings.remoteDiagnosticsLoggingEnabled
         screenSelector.refreshScreens()
