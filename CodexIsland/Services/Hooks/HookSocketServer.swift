@@ -168,6 +168,204 @@ typealias HookEventHandler = @Sendable (HookEvent) -> Void
 /// Callback for permission response failures (socket died)
 typealias PermissionFailureHandler = @Sendable (_ sessionId: String, _ toolUseId: String) -> Void
 
+enum HookSocketIOError: Error, Equatable {
+    case noData
+    case timedOut(String)
+    case invalidPayload(String)
+    case readFailed(Int32)
+    case writeFailed(Int32)
+}
+
+enum HookSocketIO {
+    typealias Writer = (_ fd: Int32, _ buffer: UnsafeRawPointer, _ count: Int) -> Int
+    typealias Poller = (_ fds: UnsafeMutablePointer<pollfd>?, _ nfds: nfds_t, _ timeout: Int32) -> Int32
+
+    static let defaultTimeout: TimeInterval = 2
+    private static let bufferSize = 131072
+
+    static func readEvent(
+        from clientSocket: Int32,
+        timeout: TimeInterval = defaultTimeout
+    ) throws -> HookEvent {
+        var allData = Data()
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+        let deadline = Date().addingTimeInterval(timeout)
+        var didReachEOF = false
+
+        while Date() < deadline {
+            var pollFd = pollfd(fd: clientSocket, events: Int16(POLLIN | POLLHUP | POLLERR), revents: 0)
+            let remainingMs = max(1, Int32(ceil(deadline.timeIntervalSinceNow * 1000)))
+            let pollResult = poll(&pollFd, 1, min(remainingMs, 250))
+
+            if pollResult < 0 {
+                if errno == EINTR {
+                    continue
+                }
+                throw HookSocketIOError.readFailed(errno)
+            }
+
+            if pollResult == 0 {
+                if let event = tryDecodeEvent(from: allData) {
+                    return event
+                }
+                continue
+            }
+
+            if (pollFd.revents & Int16(POLLERR | POLLNVAL)) != 0 {
+                throw HookSocketIOError.readFailed(errno == 0 ? EIO : errno)
+            }
+
+            if (pollFd.revents & Int16(POLLIN)) != 0 {
+                while true {
+                    let bytesRead = read(clientSocket, &buffer, buffer.count)
+
+                    if bytesRead > 0 {
+                        allData.append(contentsOf: buffer[0 ..< bytesRead])
+                        if let event = tryDecodeEvent(from: allData) {
+                            return event
+                        }
+                        continue
+                    }
+
+                    if bytesRead == 0 {
+                        didReachEOF = true
+                        break
+                    }
+
+                    if errno == EINTR {
+                        continue
+                    }
+
+                    if errno == EAGAIN || errno == EWOULDBLOCK {
+                        break
+                    }
+
+                    throw HookSocketIOError.readFailed(errno)
+                }
+            }
+
+            if (pollFd.revents & Int16(POLLHUP)) != 0 {
+                didReachEOF = true
+            }
+
+            if didReachEOF {
+                break
+            }
+        }
+
+        guard !allData.isEmpty else {
+            throw HookSocketIOError.noData
+        }
+
+        if let event = tryDecodeEvent(from: allData) {
+            return event
+        }
+
+        let preview = payloadPreview(for: allData)
+        if didReachEOF {
+            throw HookSocketIOError.invalidPayload(preview)
+        }
+        throw HookSocketIOError.timedOut(preview)
+    }
+
+    static func writeAll(
+        _ data: Data,
+        to socket: Int32,
+        timeout: TimeInterval = defaultTimeout,
+        writer: Writer? = nil,
+        poller: Poller? = nil
+    ) throws {
+        let writer = writer ?? defaultWriter
+        let poller = poller ?? defaultPoller
+        let deadline = Date().addingTimeInterval(timeout)
+        var offset = 0
+
+        try data.withUnsafeBytes { bytes in
+            guard let baseAddress = bytes.baseAddress else {
+                return
+            }
+
+            while offset < data.count {
+                let pointer = baseAddress.advanced(by: offset)
+                let result = writer(socket, pointer, data.count - offset)
+
+                if result > 0 {
+                    offset += result
+                    continue
+                }
+
+                if result == 0 {
+                    throw HookSocketIOError.writeFailed(EPIPE)
+                }
+
+                if errno == EINTR {
+                    continue
+                }
+
+                if errno == EAGAIN || errno == EWOULDBLOCK {
+                    try waitUntilWritable(socket: socket, deadline: deadline, poller: poller)
+                    continue
+                }
+
+                throw HookSocketIOError.writeFailed(errno)
+            }
+        }
+    }
+
+    private static func tryDecodeEvent(from data: Data) -> HookEvent? {
+        guard !data.isEmpty else {
+            return nil
+        }
+        return try? JSONDecoder().decode(HookEvent.self, from: data)
+    }
+
+    private static func waitUntilWritable(socket: Int32, deadline: Date, poller: Poller) throws {
+        while Date() < deadline {
+            var pollFd = pollfd(fd: socket, events: Int16(POLLOUT | POLLERR | POLLHUP), revents: 0)
+            let remainingMs = max(1, Int32(ceil(deadline.timeIntervalSinceNow * 1000)))
+            let pollResult = poller(&pollFd, 1, min(remainingMs, 250))
+
+            if pollResult < 0 {
+                if errno == EINTR {
+                    continue
+                }
+                throw HookSocketIOError.writeFailed(errno)
+            }
+
+            if pollResult == 0 {
+                continue
+            }
+
+            if (pollFd.revents & Int16(POLLOUT)) != 0 {
+                return
+            }
+
+            if (pollFd.revents & Int16(POLLERR | POLLHUP | POLLNVAL)) != 0 {
+                throw HookSocketIOError.writeFailed(errno == 0 ? EPIPE : errno)
+            }
+        }
+
+        throw HookSocketIOError.timedOut("Timed out waiting for socket to become writable")
+    }
+
+    private static func payloadPreview(for data: Data) -> String {
+        let prefix = data.prefix(512)
+        let text = String(decoding: prefix, as: UTF8.self)
+        if data.count > prefix.count {
+            return "\(text)…"
+        }
+        return text
+    }
+
+    private static func defaultWriter(fd: Int32, buffer: UnsafeRawPointer, count: Int) -> Int {
+        write(fd, buffer, count)
+    }
+
+    private static func defaultPoller(fds: UnsafeMutablePointer<pollfd>?, nfds: nfds_t, timeout: Int32) -> Int32 {
+        poll(fds, nfds, timeout)
+    }
+}
+
 /// Unix domain socket server that receives events from Claude Code hooks
 /// Uses GCD DispatchSource for non-blocking I/O
 class HookSocketServer {
@@ -436,42 +634,26 @@ class HookSocketServer {
         let flags = fcntl(clientSocket, F_GETFL)
         _ = fcntl(clientSocket, F_SETFL, flags | O_NONBLOCK)
 
-        var allData = Data()
-        var buffer = [UInt8](repeating: 0, count: 131072)
-        var pollFd = pollfd(fd: clientSocket, events: Int16(POLLIN), revents: 0)
-
-        let startTime = Date()
-        while Date().timeIntervalSince(startTime) < 0.5 {
-            let pollResult = poll(&pollFd, 1, 50)
-
-            if pollResult > 0 && (pollFd.revents & Int16(POLLIN)) != 0 {
-                let bytesRead = read(clientSocket, &buffer, buffer.count)
-
-                if bytesRead > 0 {
-                    allData.append(contentsOf: buffer[0 ..< bytesRead])
-                } else if bytesRead == 0 {
-                    break
-                } else if errno != EAGAIN && errno != EWOULDBLOCK {
-                    break
-                }
-            } else if pollResult == 0 {
-                if !allData.isEmpty {
-                    break
-                }
-            } else {
-                break
-            }
-        }
-
-        guard !allData.isEmpty else {
+        let event: HookEvent
+        do {
+            event = try HookSocketIO.readEvent(from: clientSocket)
+        } catch HookSocketIOError.noData {
             close(clientSocket)
             return
-        }
-
-        let data = allData
-
-        guard let event = try? JSONDecoder().decode(HookEvent.self, from: data) else {
-            logger.warning("Failed to parse event: \(String(data: data, encoding: .utf8) ?? "?", privacy: .public)")
+        } catch HookSocketIOError.timedOut(let preview) {
+            logger.warning("Timed out waiting for complete hook event: \(preview, privacy: .public)")
+            close(clientSocket)
+            return
+        } catch HookSocketIOError.invalidPayload(let preview) {
+            logger.warning("Failed to parse hook event payload: \(preview, privacy: .public)")
+            close(clientSocket)
+            return
+        } catch HookSocketIOError.readFailed(let code) {
+            logger.error("Failed to read hook event: errno \(code)")
+            close(clientSocket)
+            return
+        } catch {
+            logger.error("Unexpected hook socket read failure: \(error.localizedDescription, privacy: .public)")
             close(clientSocket)
             return
         }
@@ -553,24 +735,27 @@ class HookSocketServer {
 
         let response = HookResponse(decision: decision, reason: reason)
         guard let data = try? JSONEncoder().encode(response) else {
+            logger.error("Failed to encode permission response for toolUseId: \(toolUseId.prefix(12), privacy: .public)")
             close(pending.clientSocket)
+            permissionFailureHandler?(pending.sessionId, toolUseId)
             return
         }
 
         let age = Date().timeIntervalSince(pending.receivedAt)
         logger.info("Sending response: \(decision, privacy: .public) for \(pending.sessionId.prefix(8), privacy: .public) tool:\(toolUseId.prefix(12), privacy: .public) (age: \(String(format: "%.1f", age), privacy: .public)s)")
 
-        data.withUnsafeBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else {
-                logger.error("Failed to get data buffer address")
-                return
-            }
-            let result = write(pending.clientSocket, baseAddress, data.count)
-            if result < 0 {
-                logger.error("Write failed with errno: \(errno)")
-            } else {
-                logger.debug("Write succeeded: \(result) bytes")
-            }
+        do {
+            try HookSocketIO.writeAll(data, to: pending.clientSocket)
+            logger.debug("Write succeeded: \(data.count) bytes")
+        } catch HookSocketIOError.timedOut(let message) {
+            logger.error("Timed out writing permission response: \(message, privacy: .public)")
+            permissionFailureHandler?(pending.sessionId, toolUseId)
+        } catch HookSocketIOError.writeFailed(let code) {
+            logger.error("Write failed with errno: \(code)")
+            permissionFailureHandler?(pending.sessionId, toolUseId)
+        } catch {
+            logger.error("Unexpected permission response failure: \(error.localizedDescription, privacy: .public)")
+            permissionFailureHandler?(pending.sessionId, toolUseId)
         }
 
         close(pending.clientSocket)
@@ -594,6 +779,7 @@ class HookSocketServer {
 
         let response = HookResponse(decision: decision, reason: reason)
         guard let data = try? JSONEncoder().encode(response) else {
+            logger.error("Failed to encode permission response for session: \(sessionId.prefix(8), privacy: .public)")
             close(pending.clientSocket)
             permissionFailureHandler?(sessionId, pending.toolUseId)
             return
@@ -603,18 +789,16 @@ class HookSocketServer {
         logger.info("Sending response: \(decision, privacy: .public) for \(sessionId.prefix(8), privacy: .public) tool:\(pending.toolUseId.prefix(12), privacy: .public) (age: \(String(format: "%.1f", age), privacy: .public)s)")
 
         var writeSuccess = false
-        data.withUnsafeBytes { bytes in
-            guard let baseAddress = bytes.baseAddress else {
-                logger.error("Failed to get data buffer address")
-                return
-            }
-            let result = write(pending.clientSocket, baseAddress, data.count)
-            if result < 0 {
-                logger.error("Write failed with errno: \(errno)")
-            } else {
-                logger.debug("Write succeeded: \(result) bytes")
-                writeSuccess = true
-            }
+        do {
+            try HookSocketIO.writeAll(data, to: pending.clientSocket)
+            logger.debug("Write succeeded: \(data.count) bytes")
+            writeSuccess = true
+        } catch HookSocketIOError.timedOut(let message) {
+            logger.error("Timed out writing permission response: \(message, privacy: .public)")
+        } catch HookSocketIOError.writeFailed(let code) {
+            logger.error("Write failed with errno: \(code)")
+        } catch {
+            logger.error("Unexpected permission response failure: \(error.localizedDescription, privacy: .public)")
         }
 
         close(pending.clientSocket)
