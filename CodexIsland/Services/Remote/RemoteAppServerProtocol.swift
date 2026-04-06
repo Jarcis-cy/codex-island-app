@@ -631,7 +631,7 @@ extension RemoteAppServerThreadItem {
 }
 
 extension RemoteAppServerThreadItem: Codable {
-    private enum CodingKeys: String, CodingKey {
+    fileprivate enum CodingKeys: String, CodingKey {
         case type
         case id
         case content
@@ -664,8 +664,8 @@ extension RemoteAppServerThreadItem: Codable {
         case "reasoning":
             self = .reasoning(
                 id: try container.decode(String.self, forKey: .id),
-                summary: (try? container.decode([String].self, forKey: .summary)) ?? [],
-                content: (try? container.decode([String].self, forKey: .content)) ?? []
+                summary: try container.decodeLossyStringArray(forKey: .summary, itemType: type),
+                content: try container.decodeLossyStringArray(forKey: .content, itemType: type)
             )
         case "plan":
             self = .plan(
@@ -678,12 +678,12 @@ extension RemoteAppServerThreadItem: Codable {
                 command: try container.decode(String.self, forKey: .command),
                 cwd: try container.decode(String.self, forKey: .cwd),
                 status: try container.decode(RemoteAppServerCommandExecutionStatus.self, forKey: .status),
-                aggregatedOutput: try? container.decode(String.self, forKey: .aggregatedOutput)
+                aggregatedOutput: try container.decodeLossyOptionalString(forKey: .aggregatedOutput, itemType: type)
             )
         case "fileChange":
             self = .fileChange(
                 id: try container.decode(String.self, forKey: .id),
-                changes: (try? container.decode([RemoteAppServerFileUpdateChange].self, forKey: .changes)) ?? [],
+                changes: try container.decodeLossyFileChanges(forKey: .changes, itemType: type),
                 status: try container.decode(RemoteAppServerPatchApplyStatus.self, forKey: .status)
             )
         case "enteredReviewMode":
@@ -750,6 +750,74 @@ extension RemoteAppServerThreadItem: Codable {
             try container.encode("unsupported", forKey: .type)
             try container.encodeIfPresent(id, forKey: .id)
         }
+    }
+}
+
+private extension KeyedDecodingContainer where K == RemoteAppServerThreadItem.CodingKeys {
+    func decodeLossyStringArray(
+        forKey key: K,
+        itemType: String
+    ) throws -> [String] {
+        guard contains(key) else { return [] }
+        do {
+            return try decode([String].self, forKey: key)
+        } catch {
+            throw RemoteAppServerThreadItem.decodingFailure(
+                key: key,
+                itemType: itemType,
+                expected: "[String]",
+                underlying: error
+            )
+        }
+    }
+
+    func decodeLossyOptionalString(
+        forKey key: K,
+        itemType: String
+    ) throws -> String? {
+        guard contains(key) else { return nil }
+        do {
+            return try decodeNil(forKey: key) ? nil : decode(String.self, forKey: key)
+        } catch {
+            throw RemoteAppServerThreadItem.decodingFailure(
+                key: key,
+                itemType: itemType,
+                expected: "String?",
+                underlying: error
+            )
+        }
+    }
+
+    func decodeLossyFileChanges(
+        forKey key: K,
+        itemType: String
+    ) throws -> [RemoteAppServerFileUpdateChange] {
+        guard contains(key) else { return [] }
+        do {
+            return try decode([RemoteAppServerFileUpdateChange].self, forKey: key)
+        } catch {
+            throw RemoteAppServerThreadItem.decodingFailure(
+                key: key,
+                itemType: itemType,
+                expected: "[RemoteAppServerFileUpdateChange]",
+                underlying: error
+            )
+        }
+    }
+}
+
+private extension RemoteAppServerThreadItem {
+    static func decodingFailure(
+        key: CodingKeys,
+        itemType: String,
+        expected: String,
+        underlying: Error
+    ) -> DecodingError {
+        let context = DecodingError.Context(
+            codingPath: [key],
+            debugDescription: "Failed to decode \(itemType).\(key.stringValue) as \(expected): \(underlying)"
+        )
+        return .dataCorrupted(context)
     }
 }
 

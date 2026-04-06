@@ -161,6 +161,47 @@ final class RemoteAppServerProtocolTests: XCTestCase {
         )
     }
 
+    func testDecodeReasoningItemRejectsNonArraySummary() {
+        let data = #"""
+        {
+          "type":"reasoning",
+          "id":"reasoning-1",
+          "summary":"wrong-shape",
+          "content":["ok"]
+        }
+        """#.data(using: .utf8)!
+
+        XCTAssertThrowsError(try JSONDecoder().decode(RemoteAppServerThreadItem.self, from: data))
+    }
+
+    func testDecodeCommandExecutionItemRejectsNonStringAggregatedOutput() {
+        let data = #"""
+        {
+          "type":"commandExecution",
+          "id":"cmd-1",
+          "command":"pwd",
+          "cwd":"/tmp",
+          "status":"completed",
+          "aggregatedOutput":["wrong-shape"]
+        }
+        """#.data(using: .utf8)!
+
+        XCTAssertThrowsError(try JSONDecoder().decode(RemoteAppServerThreadItem.self, from: data))
+    }
+
+    func testDecodeFileChangeItemRejectsMalformedChanges() {
+        let data = #"""
+        {
+          "type":"fileChange",
+          "id":"edit-1",
+          "changes":{"path":"file.swift","diff":"@@"},
+          "status":"completed"
+        }
+        """#.data(using: .utf8)!
+
+        XCTAssertThrowsError(try JSONDecoder().decode(RemoteAppServerThreadItem.self, from: data))
+    }
+
     func testDecodeErrorNotificationAdditionalDetails() throws {
         let data = #"""
         {

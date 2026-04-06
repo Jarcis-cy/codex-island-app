@@ -1070,7 +1070,7 @@ final class RemoteSessionMonitorTests: XCTestCase {
             ephemeral: false,
             modelProvider: "openai",
             createdAt: 1_700_000_000,
-            updatedAt: Int(Date().timeIntervalSince1970),
+            updatedAt: Int64(Date().timeIntervalSince1970),
             status: .idle,
             path: "/remote/thread-1.jsonl",
             cwd: "/repo",
