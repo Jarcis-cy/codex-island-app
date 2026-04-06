@@ -40,7 +40,7 @@ class JSONLInterruptWatcher {
     init(sessionId: String, cwd: String) {
         self.sessionId = sessionId
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-")
-                            .replacingOccurrences(of: ".", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
         self.filePath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
     }
 
@@ -132,7 +132,7 @@ class JSONLInterruptWatcher {
     private func isInterruptLine(_ line: String) -> Bool {
         if line.contains("\"type\":\"user\"") {
             if line.contains("[Request interrupted by user]") ||
-               line.contains("[Request interrupted by user for tool use]") {
+                line.contains("[Request interrupted by user for tool use]") {
                 return true
             }
         }

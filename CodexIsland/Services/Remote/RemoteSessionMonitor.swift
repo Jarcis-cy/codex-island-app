@@ -700,7 +700,7 @@ final class RemoteSessionMonitor: ObservableObject {
            let normalizedDefaultCwd,
            let existingThread = threads.first(where: {
                $0.hostId == hostId &&
-               $0.logicalSessionId == logicalSessionId(for: host, cwd: normalizedDefaultCwd)
+                   $0.logicalSessionId == logicalSessionId(for: host, cwd: normalizedDefaultCwd)
            }) {
             return existingThread
         }
@@ -1228,10 +1228,10 @@ final class RemoteSessionMonitor: ObservableObject {
         let host = hosts.first(where: { $0.id == hostId })
         let visibleCandidates = rawThreads(hostId: hostId).filter { thread in
             shouldDisplayThread(thread, for: host) &&
-            self.logicalSessionId(
-                sshTarget: host?.sshTarget ?? "",
-                cwd: thread.cwd
-            ) == logicalSessionId
+                self.logicalSessionId(
+                    sshTarget: host?.sshTarget ?? "",
+                    cwd: thread.cwd
+                ) == logicalSessionId
         }
 
         guard !visibleCandidates.isEmpty else {
@@ -1594,8 +1594,8 @@ final class RemoteSessionMonitor: ObservableObject {
         let transcriptPhase = snapshot.transcriptPhase
         let shouldOverridePhase = transcriptPhase != nil && (
             currentPhase == .idle ||
-            (threads[index].turnContext.collaborationMode?.mode == .plan &&
-             threads[index].primaryPendingInteraction == nil)
+                (threads[index].turnContext.collaborationMode?.mode == .plan &&
+                    threads[index].primaryPendingInteraction == nil)
         )
 
         if !snapshot.pendingInteractions.isEmpty {
@@ -1609,8 +1609,8 @@ final class RemoteSessionMonitor: ObservableObject {
         let shouldReplaceHistory =
             !snapshot.history.isEmpty &&
             (threads[index].history.isEmpty ||
-             !snapshot.pendingInteractions.isEmpty ||
-             (threads[index].turnContext.collaborationMode?.mode == .plan && currentPhase == .idle))
+                !snapshot.pendingInteractions.isEmpty ||
+                (threads[index].turnContext.collaborationMode?.mode == .plan && currentPhase == .idle))
 
         if shouldReplaceHistory {
             threads[index].history = snapshot.history
@@ -2174,9 +2174,9 @@ final class RemoteSessionMonitor: ObservableObject {
         guard let optimisticMatch = optimisticUserMessages
             .filter({ optimistic in
                 optimistic.hostId == hostId &&
-                optimistic.threadId == threadId &&
-                optimistic.text == text &&
-                now.timeIntervalSince(optimistic.createdAt) < 30
+                    optimistic.threadId == threadId &&
+                    optimistic.text == text &&
+                    now.timeIntervalSince(optimistic.createdAt) < 30
             })
             .sorted(by: { $0.createdAt < $1.createdAt })
             .first else {

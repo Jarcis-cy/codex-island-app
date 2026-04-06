@@ -43,8 +43,8 @@ extension PermissionContext: Equatable {
     nonisolated static func == (lhs: PermissionContext, rhs: PermissionContext) -> Bool {
         // Compare by identity fields only (AnyCodable doesn't conform to Equatable)
         lhs.toolUseId == rhs.toolUseId &&
-        lhs.toolName == rhs.toolName &&
-        lhs.receivedAt == rhs.receivedAt
+            lhs.toolName == rhs.toolName &&
+            lhs.receivedAt == rhs.receivedAt
     }
 }
 

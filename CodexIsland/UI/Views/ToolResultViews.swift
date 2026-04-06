@@ -919,8 +919,8 @@ struct SimpleDiffView: View {
         // DP table
         var dp = Array(repeating: Array(repeating: 0, count: n + 1), count: m + 1)
 
-        for i in 1...m {
-            for j in 1...n {
+        for i in 1 ... m {
+            for j in 1 ... n {
                 if a[i - 1] == b[j - 1] {
                     dp[i][j] = dp[i - 1][j - 1] + 1
                 } else {
@@ -1099,22 +1099,22 @@ struct RoundedCorner: Shape {
         path.addLine(to: CGPoint(x: rect.maxX - tr, y: rect.minY))
         if tr > 0 {
             path.addArc(center: CGPoint(x: rect.maxX - tr, y: rect.minY + tr),
-                       radius: tr, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
+                        radius: tr, startAngle: .degrees(-90), endAngle: .degrees(0), clockwise: false)
         }
         path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - br))
         if br > 0 {
             path.addArc(center: CGPoint(x: rect.maxX - br, y: rect.maxY - br),
-                       radius: br, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
+                        radius: br, startAngle: .degrees(0), endAngle: .degrees(90), clockwise: false)
         }
         path.addLine(to: CGPoint(x: rect.minX + bl, y: rect.maxY))
         if bl > 0 {
             path.addArc(center: CGPoint(x: rect.minX + bl, y: rect.maxY - bl),
-                       radius: bl, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
+                        radius: bl, startAngle: .degrees(90), endAngle: .degrees(180), clockwise: false)
         }
         path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + tl))
         if tl > 0 {
             path.addArc(center: CGPoint(x: rect.minX + tl, y: rect.minY + tl),
-                       radius: tl, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
+                        radius: tl, startAngle: .degrees(180), endAngle: .degrees(270), clockwise: false)
         }
         path.closeSubpath()
 

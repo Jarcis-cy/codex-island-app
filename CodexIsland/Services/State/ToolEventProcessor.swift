@@ -112,7 +112,7 @@ enum ToolEventProcessor {
         for (taskId, taskContext) in session.subagentState.activeTasks {
             var tools = taskContext.subagentTools
             if markAsInterrupted {
-                for i in 0..<tools.count {
+                for i in 0 ..< tools.count {
                     if tools[i].status == .running {
                         tools[i].status = .interrupted
                     }
@@ -135,7 +135,7 @@ enum ToolEventProcessor {
         toolId: String,
         status: ToolStatus
     ) {
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             if session.chatItems[i].id == toolId,
                case .toolCall(var tool) = session.chatItems[i].type,
                tool.status == .waitingForApproval || tool.status == .running {
@@ -168,7 +168,7 @@ enum ToolEventProcessor {
 
     /// Mark all running tools as interrupted
     static func markRunningToolsInterrupted(session: inout SessionState) {
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             if case .toolCall(var tool) = session.chatItems[i].type,
                tool.status == .running {
                 tool.status = .interrupted
@@ -191,7 +191,7 @@ enum ToolEventProcessor {
     ) {
         guard !subagentTools.isEmpty else { return }
 
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             if session.chatItems[i].id == taskToolId,
                case .toolCall(var tool) = session.chatItems[i].type {
                 tool.subagentTools = subagentTools

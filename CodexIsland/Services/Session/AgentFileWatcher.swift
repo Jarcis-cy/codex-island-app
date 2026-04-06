@@ -41,7 +41,7 @@ class AgentFileWatcher {
         self.cwd = cwd
 
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-")
-                            .replacingOccurrences(of: ".", with: "-")
+            .replacingOccurrences(of: ".", with: "-")
         self.filePath = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
     }
 

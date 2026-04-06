@@ -241,8 +241,8 @@ nonisolated struct MCPResult: Equatable, @unchecked Sendable {
 
     static func == (lhs: MCPResult, rhs: MCPResult) -> Bool {
         lhs.serverName == rhs.serverName &&
-        lhs.toolName == rhs.toolName &&
-        NSDictionary(dictionary: lhs.rawResult).isEqual(to: rhs.rawResult)
+            lhs.toolName == rhs.toolName &&
+            NSDictionary(dictionary: lhs.rawResult).isEqual(to: rhs.rawResult)
     }
 }
 

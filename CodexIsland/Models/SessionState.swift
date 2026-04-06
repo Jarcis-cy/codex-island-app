@@ -253,11 +253,11 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     var canAttemptFocusTerminal: Bool {
         pid != nil ||
-        terminalProcessId != nil ||
-        terminalBundleId != nil ||
-        terminalName != nil ||
-        terminalWindowId != nil ||
-        terminalSurfaceId != nil
+            terminalProcessId != nil ||
+            terminalBundleId != nil ||
+            terminalName != nil ||
+            terminalWindowId != nil ||
+            terminalSurfaceId != nil
     }
 
     var currentModel: String? {

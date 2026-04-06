@@ -843,14 +843,14 @@ actor CodexConversationParser {
     private func isCodexInjectedText(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("# AGENTS.md instructions for ") ||
-        trimmed.hasPrefix("<environment_context>") ||
-        trimmed.hasPrefix("<permissions instructions>") ||
-        trimmed.hasPrefix("<collaboration_mode>") ||
-        trimmed.hasPrefix("<turn_aborted>") ||
-        trimmed.hasPrefix("<skills_instructions>") ||
-        trimmed.hasPrefix("<plugins_instructions>") ||
-        trimmed.hasPrefix("<apps_instructions>") ||
-        trimmed.hasPrefix("<user_instructions>")
+            trimmed.hasPrefix("<environment_context>") ||
+            trimmed.hasPrefix("<permissions instructions>") ||
+            trimmed.hasPrefix("<collaboration_mode>") ||
+            trimmed.hasPrefix("<turn_aborted>") ||
+            trimmed.hasPrefix("<skills_instructions>") ||
+            trimmed.hasPrefix("<plugins_instructions>") ||
+            trimmed.hasPrefix("<apps_instructions>") ||
+            trimmed.hasPrefix("<user_instructions>")
     }
 
     private func parseReasoningText(_ payload: [String: Any]) -> String {

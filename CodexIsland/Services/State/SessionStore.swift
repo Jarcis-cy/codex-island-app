@@ -358,7 +358,7 @@ actor SessionStore {
 
     private func isGhosttySession(terminalName: String?, bundleId: String?) -> Bool {
         normalizedComponent(bundleId) == "com.mitchellh.ghostty" ||
-        normalizedComponent(terminalName) == "ghostty"
+            normalizedComponent(terminalName) == "ghostty"
     }
 
     private func bind(session: inout SessionState) {
@@ -446,7 +446,7 @@ actor SessionStore {
                 session.toolTracker.completeTool(id: toolUseId, success: true)
                 // Update chatItem status - tool completed (possibly approved via terminal)
                 // Only update if still waiting for approval or running
-                for i in 0..<session.chatItems.count {
+                for i in 0 ..< session.chatItems.count {
                     if session.chatItems[i].id == toolUseId,
                        case .toolCall(var tool) = session.chatItems[i].type,
                        tool.status == .waitingForApproval || tool.status == .running {
@@ -584,7 +584,7 @@ actor SessionStore {
         }
 
         // Update the tool status
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             if session.chatItems[i].id == toolUseId,
                case .toolCall(var tool) = session.chatItems[i].type {
                 tool.status = result.status
@@ -861,7 +861,7 @@ actor SessionStore {
         cwd: String,
         structuredResults: [String: ToolResultData]
     ) async {
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             guard case .toolCall(var tool) = session.chatItems[i].type,
                   tool.name == "Task",
                   let structuredResult = structuredResults[session.chatItems[i].id],
@@ -996,7 +996,7 @@ actor SessionStore {
 
     private func updateToolStatus(in session: inout SessionState, toolId: String, status: ToolStatus) {
         var found = false
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             if session.chatItems[i].id == toolId,
                case .toolCall(var tool) = session.chatItems[i].type {
                 tool.status = status
@@ -1024,7 +1024,7 @@ actor SessionStore {
         session.subagentState = SubagentState()
 
         // Mark running tools as interrupted
-        for i in 0..<session.chatItems.count {
+        for i in 0 ..< session.chatItems.count {
             if case .toolCall(var tool) = session.chatItems[i].type,
                tool.status == .running {
                 tool.status = .interrupted

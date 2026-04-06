@@ -159,14 +159,14 @@ class ChatHistoryManager: ObservableObject {
     private func isCodexInjectedText(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.hasPrefix("# AGENTS.md instructions for ") ||
-        trimmed.hasPrefix("<environment_context>") ||
-        trimmed.hasPrefix("<permissions instructions>") ||
-        trimmed.hasPrefix("<collaboration_mode>") ||
-        trimmed.hasPrefix("<turn_aborted>") ||
-        trimmed.hasPrefix("<skills_instructions>") ||
-        trimmed.hasPrefix("<plugins_instructions>") ||
-        trimmed.hasPrefix("<apps_instructions>") ||
-        trimmed.hasPrefix("<user_instructions>")
+            trimmed.hasPrefix("<environment_context>") ||
+            trimmed.hasPrefix("<permissions instructions>") ||
+            trimmed.hasPrefix("<collaboration_mode>") ||
+            trimmed.hasPrefix("<turn_aborted>") ||
+            trimmed.hasPrefix("<skills_instructions>") ||
+            trimmed.hasPrefix("<plugins_instructions>") ||
+            trimmed.hasPrefix("<apps_instructions>") ||
+            trimmed.hasPrefix("<user_instructions>")
     }
 }
 
@@ -245,11 +245,11 @@ nonisolated struct ToolCallItem: Equatable, Sendable {
     // Custom Equatable implementation to handle structuredResult
     static func == (lhs: ToolCallItem, rhs: ToolCallItem) -> Bool {
         lhs.name == rhs.name &&
-        lhs.input == rhs.input &&
-        lhs.status == rhs.status &&
-        lhs.result == rhs.result &&
-        lhs.structuredResult == rhs.structuredResult &&
-        lhs.subagentTools == rhs.subagentTools
+            lhs.input == rhs.input &&
+            lhs.status == rhs.status &&
+            lhs.result == rhs.result &&
+            lhs.structuredResult == rhs.structuredResult &&
+            lhs.subagentTools == rhs.subagentTools
     }
 }
 

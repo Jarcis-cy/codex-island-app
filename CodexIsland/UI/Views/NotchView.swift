@@ -48,7 +48,7 @@ struct NotchView: View {
     /// Whether any session has a pending permission request
     private var hasPendingPermission: Bool {
         sessionMonitor.instances.contains { $0.primaryPendingInteraction?.isApproval == true } ||
-        remoteSessionMonitor.threads.contains { $0.primaryPendingInteraction?.isApproval == true }
+            remoteSessionMonitor.threads.contains { $0.primaryPendingInteraction?.isApproval == true }
     }
 
     private var allPhases: [SessionPhase] {
@@ -423,8 +423,8 @@ struct NotchView: View {
         let newPendingIds = currentIds.subtracting(previousPendingIds)
 
         if !newPendingIds.isEmpty &&
-           viewModel.status == .closed &&
-           !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
+            viewModel.status == .closed &&
+            !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
             viewModel.notchOpen(reason: .notification)
         }
 
@@ -437,8 +437,8 @@ struct NotchView: View {
         let newPendingIds = currentIds.subtracting(previousPendingIds)
 
         if !newPendingIds.isEmpty &&
-           viewModel.status == .closed &&
-           !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
+            viewModel.status == .closed &&
+            !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
             viewModel.notchOpen(reason: .notification)
         }
 

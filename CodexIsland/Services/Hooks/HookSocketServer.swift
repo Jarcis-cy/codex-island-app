@@ -448,7 +448,7 @@ class HookSocketServer {
                 let bytesRead = read(clientSocket, &buffer, buffer.count)
 
                 if bytesRead > 0 {
-                    allData.append(contentsOf: buffer[0..<bytesRead])
+                    allData.append(contentsOf: buffer[0 ..< bytesRead])
                 } else if bytesRead == 0 {
                     break
                 } else if errno != EAGAIN && errno != EWOULDBLOCK {

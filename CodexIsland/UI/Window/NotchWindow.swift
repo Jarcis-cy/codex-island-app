@@ -109,7 +109,7 @@ class NotchPanel: NSPanel {
     override func sendEvent(_ event: NSEvent) {
         // For mouse events, check if we should pass through
         if event.type == .leftMouseDown || event.type == .leftMouseUp ||
-           event.type == .rightMouseDown || event.type == .rightMouseUp {
+            event.type == .rightMouseDown || event.type == .rightMouseUp {
             // Get the location in window coordinates
             let locationInWindow = event.locationInWindow
 

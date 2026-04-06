@@ -63,8 +63,8 @@ actor ConversationParser {
             // Detect if this was an interrupt or rejection (various formats)
             self.isInterrupted = isError && (
                 content?.contains("Interrupted by user") == true ||
-                content?.contains("interrupted by user") == true ||
-                content?.contains("user doesn't want to proceed") == true
+                    content?.contains("interrupted by user") == true ||
+                    content?.contains("user doesn't want to proceed") == true
             )
         }
     }
@@ -591,7 +591,7 @@ actor ConversationParser {
     ) -> ToolResultData {
         if toolName.hasPrefix("mcp__") {
             let parts = toolName.dropFirst(5).split(separator: "_", maxSplits: 2)
-            let serverName = parts.count > 0 ? String(parts[0]) : "unknown"
+            let serverName = !parts.isEmpty ? String(parts[0]) : "unknown"
             let mcpToolName = parts.count > 1 ? String(parts[1].dropFirst()) : toolName
             return .mcp(MCPResult(
                 serverName: serverName,
@@ -631,8 +631,8 @@ actor ConversationParser {
             return parseExitPlanModeResult(toolUseResult)
         default:
             let content = toolUseResult["content"] as? String ??
-                          toolUseResult["stdout"] as? String ??
-                          toolUseResult["result"] as? String
+                toolUseResult["stdout"] as? String ??
+                toolUseResult["result"] as? String
             return .generic(GenericResult(rawContent: content, rawData: toolUseResult))
         }
     }

@@ -164,8 +164,8 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
         let newline = Data([0x0A])
 
         while let range = buffer.range(of: newline) {
-            let lineData = buffer.subdata(in: buffer.startIndex..<range.lowerBound)
-            buffer.removeSubrange(buffer.startIndex..<range.upperBound)
+            let lineData = buffer.subdata(in: buffer.startIndex ..< range.lowerBound)
+            buffer.removeSubrange(buffer.startIndex ..< range.upperBound)
             guard let line = String(data: lineData, encoding: .utf8), !line.isEmpty else { continue }
             Task {
                 await forward(line)
@@ -182,7 +182,7 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
 
         guard let line = String(data: buffer, encoding: .utf8)?
             .trimmingCharacters(in: .newlines),
-              !line.isEmpty else {
+            !line.isEmpty else {
             return
         }
 

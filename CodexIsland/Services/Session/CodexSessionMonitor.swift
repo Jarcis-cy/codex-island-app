@@ -385,8 +385,8 @@ class CodexSessionMonitor: ObservableObject {
         return localAppServerThreads.values
             .filter { thread in
                 !existingSessionIds.contains(thread.threadId) &&
-                !matchedStoreSessionIds.contains(thread.threadId) &&
-                !dismissedSyntheticSessionIds.contains(thread.threadId)
+                    !matchedStoreSessionIds.contains(thread.threadId) &&
+                    !dismissedSyntheticSessionIds.contains(thread.threadId)
             }
             .sorted { lhs, rhs in
                 if lhs.lastActivity != rhs.lastActivity {
@@ -605,7 +605,7 @@ class CodexSessionMonitor: ObservableObject {
         let localThreadSessions = localAppServerThreads.values
             .filter { thread in
                 matchedStoreSessions[thread.threadId] != nil ||
-                !dismissedSyntheticSessionIds.contains(thread.threadId)
+                    !dismissedSyntheticSessionIds.contains(thread.threadId)
             }
             .sorted { lhs, rhs in
                 if lhs.lastActivity != rhs.lastActivity {
@@ -683,9 +683,9 @@ class CodexSessionMonitor: ObservableObject {
 
         if let transcriptPath = session.transcriptPath,
            localAppServerMonitor.findThread(
-                hostId: Self.localAppServerHost.id,
-                threadId: nil,
-                transcriptPath: transcriptPath
+               hostId: Self.localAppServerHost.id,
+               threadId: nil,
+               transcriptPath: transcriptPath
            )?.threadId == thread.threadId {
             return 2
         }
@@ -790,7 +790,7 @@ class CodexSessionMonitor: ObservableObject {
         pendingLocalThreadLoads.insert(session.sessionId)
         defer { pendingLocalThreadLoads.remove(session.sessionId) }
 
-        for attempt in 0..<4 {
+        for attempt in 0 ..< 4 {
             if let thread = findKnownAppServerThread(
                 for: session,
                 candidateThreadIDs: candidateThreadIDs
@@ -917,7 +917,6 @@ class CodexSessionMonitor: ObservableObject {
         }
         return errno != ESRCH
     }
-
 }
 
 // MARK: - Interrupt Watcher Delegate

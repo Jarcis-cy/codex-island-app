@@ -37,7 +37,7 @@ final class RemoteDiagnosticsLoggerTests: XCTestCase {
             isEnabled: { true }
         )
 
-        for index in 0..<6 {
+        for index in 0 ..< 6 {
             await logger.log(
                 RemoteDiagnosticsRecord(
                     level: .info,

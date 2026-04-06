@@ -47,8 +47,8 @@ struct WaitingForInputIcon: View {
             // Draw solid dots
             for (x, y) in solidDots {
                 let rect = CGRect(
-                    x: x * scale - dotSize/2,
-                    y: y * scale - dotSize/2,
+                    x: x * scale - dotSize / 2,
+                    y: y * scale - dotSize / 2,
                     width: dotSize,
                     height: dotSize
                 )
@@ -58,8 +58,8 @@ struct WaitingForInputIcon: View {
             // Draw faded dots
             for (x, y) in fadedDots {
                 let rect = CGRect(
-                    x: x * scale - dotSize/2,
-                    y: y * scale - dotSize/2,
+                    x: x * scale - dotSize / 2,
+                    y: y * scale - dotSize / 2,
                     width: dotSize,
                     height: dotSize
                 )
@@ -99,8 +99,8 @@ struct WaitingForApprovalIcon: View {
 
             for (x, y) in solidDots {
                 let rect = CGRect(
-                    x: x * scale - dotSize/2,
-                    y: y * scale - dotSize/2,
+                    x: x * scale - dotSize / 2,
+                    y: y * scale - dotSize / 2,
                     width: dotSize,
                     height: dotSize
                 )
@@ -149,8 +149,8 @@ struct RunningIcon: View {
             // Draw solid dots
             for (x, y) in solidDots {
                 let rect = CGRect(
-                    x: x * scale - dotSize/2,
-                    y: y * scale - dotSize/2,
+                    x: x * scale - dotSize / 2,
+                    y: y * scale - dotSize / 2,
                     width: dotSize,
                     height: dotSize
                 )
@@ -160,8 +160,8 @@ struct RunningIcon: View {
             // Draw faded dots
             for (x, y) in fadedDots {
                 let rect = CGRect(
-                    x: x * scale - dotSize/2,
-                    y: y * scale - dotSize/2,
+                    x: x * scale - dotSize / 2,
+                    y: y * scale - dotSize / 2,
                     width: dotSize,
                     height: dotSize
                 )
@@ -173,7 +173,7 @@ struct RunningIcon: View {
         .onAppear {
             withAnimation(
                 .linear(duration: 2.0)
-                .repeatForever(autoreverses: false)
+                    .repeatForever(autoreverses: false)
             ) {
                 rotation = 360
             }
@@ -203,8 +203,8 @@ struct IdleIcon: View {
 
             for (x, y) in dots {
                 let rect = CGRect(
-                    x: x * scale - dotSize/2,
-                    y: y * scale - dotSize/2,
+                    x: x * scale - dotSize / 2,
+                    y: y * scale - dotSize / 2,
                     width: dotSize,
                     height: dotSize
                 )

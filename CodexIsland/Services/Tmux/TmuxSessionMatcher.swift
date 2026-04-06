@@ -92,7 +92,7 @@ actor TmuxSessionMatcher {
             snippets.append(snippet)
         }
 
-        guard snippets.count > 0 else { return [] }
+        guard !snippets.isEmpty else { return [] }
 
         if snippets.count <= 5 {
             return snippets

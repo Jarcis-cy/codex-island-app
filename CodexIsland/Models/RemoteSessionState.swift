@@ -160,14 +160,14 @@ nonisolated struct RemoteThreadState: Identifiable, Equatable, Sendable {
 
     var canStartTurn: Bool {
         connectionState.isConnected &&
-        primaryPendingInteraction == nil &&
-        (phase == .idle || phase == .waitingForInput)
+            primaryPendingInteraction == nil &&
+            (phase == .idle || phase == .waitingForInput)
     }
 
     var canSendMessage: Bool {
         connectionState.isConnected &&
-        primaryPendingInteraction == nil &&
-        (canStartTurn || canSteerTurn)
+            primaryPendingInteraction == nil &&
+            (canStartTurn || canSteerTurn)
     }
 
     var needsHydration: Bool {

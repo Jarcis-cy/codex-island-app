@@ -1379,5 +1379,4 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertEqual(callbackThread.threadId, "thread-new")
         XCTAssertFalse(tracker.didResume)
     }
-
 }

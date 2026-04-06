@@ -384,7 +384,6 @@ struct InstanceRow: View {
             }
         }
     }
-
 }
 
 // MARK: - Remote Instance Row

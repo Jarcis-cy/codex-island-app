@@ -176,7 +176,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let data = output.fileHandleForReading.readDataToEndOfFile()
             guard let version = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !version.isEmpty else {
+                !version.isEmpty else {
                 return
             }
 

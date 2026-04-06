@@ -35,7 +35,7 @@ nonisolated struct SessionTokenUsage: Equatable, Sendable {
         let used = max(tokensInContextWindow - Self.baselineTokens, 0)
         let remaining = max(effectiveWindow - used, 0)
         let ratio = Double(remaining) / Double(effectiveWindow)
-        return Int((ratio * 100.0).rounded().clamped(to: 0...100))
+        return Int((ratio * 100.0).rounded().clamped(to: 0 ... 100))
     }
 }
 

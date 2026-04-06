@@ -289,7 +289,7 @@ actor SSHConfigHostSuggestionProvider {
         let status = glob(resolvedPattern, 0, nil, &globResult)
         guard status == 0 else { return [] }
 
-        return (0..<Int(globResult.gl_pathc)).compactMap { index in
+        return (0 ..< Int(globResult.gl_pathc)).compactMap { index in
             guard let path = globResult.gl_pathv[index] else { return nil }
             return URL(fileURLWithPath: String(cString: path))
         }

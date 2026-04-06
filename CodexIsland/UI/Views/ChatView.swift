@@ -318,7 +318,7 @@ struct ChatView: View {
                     sessionId: updated.sessionId
                 ) && (
                     previousSession.sessionId != updated.sessionId ||
-                    previousSession.transcriptPath != updated.transcriptPath
+                        previousSession.transcriptPath != updated.transcriptPath
                 )
 
                 if needsReload {
@@ -1241,7 +1241,7 @@ struct ChatView: View {
 
     private func currentSession(in sessions: [SessionState]) -> SessionState? {
         sessions.first(where: { $0.sessionId == preferredSessionId }) ??
-        sessions.first(where: { $0.logicalSessionId == logicalSessionId })
+            sessions.first(where: { $0.logicalSessionId == logicalSessionId })
     }
 
     private func dismissSlashPanel() {
@@ -1840,7 +1840,7 @@ struct ToolCallView: View {
     private func startPulsing() {
         withAnimation(
             .easeInOut(duration: 0.6)
-            .repeatForever(autoreverses: true)
+                .repeatForever(autoreverses: true)
         ) {
             pulseOpacity = 0.15
         }

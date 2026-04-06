@@ -80,7 +80,7 @@ struct ScreenPickerRow: View {
                             label: screen.localizedName,
                             sublabel: screenSublabel(for: screen),
                             isSelected: screenSelector.selectionMode == .specificScreen &&
-                                       screenSelector.isSelected(screen)
+                                screenSelector.isSelected(screen)
                         ) {
                             screenSelector.selectScreen(screen)
                             triggerWindowRecreation()
