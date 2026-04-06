@@ -499,6 +499,91 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testLocalSendMessageResultReturnsInitializingWhenThreadLoadAlreadyPending() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        connection.refreshThreadsHandler = {
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        connection.resumeThreadHandler = { threadId, _ in
+            makeThreadResumeResponse(thread: makeThread(id: threadId, preview: "Recovered", cwd: "/tmp"))
+        }
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        async let firstAttempt = sessionMonitor.sendMessageResult(sessionId: "session-1", text: "first")
+        try? await Task.sleep(for: .milliseconds(50))
+        let secondAttempt = await sessionMonitor.sendMessageResult(sessionId: "session-1", text: "second")
+        _ = await firstAttempt
+
+        XCTAssertEqual(secondAttempt, .initializing)
+    }
+
+    @MainActor
+    func testLocalSendMessageResultReturnsUnderlyingThreadLoadFailure() async throws {
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(
+            id: "local-app-server",
+            name: "Local App Server",
+            sshTarget: "local-app-server",
+            defaultCwd: "",
+            isEnabled: true
+        )
+        let localMonitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: TestDiagnosticsLogger(),
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(localMonitor)
+
+        connection.refreshThreadsHandler = {
+            throw RemoteSessionError.transport("app-server handshake failed")
+        }
+        connection.resumeThreadHandler = { _, _ in
+            throw RemoteSessionError.transport("thread resume failed")
+        }
+
+        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        TestObjectRetainer.retain(sessionMonitor)
+
+        localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        let result = await sessionMonitor.sendMessageResult(sessionId: "session-1", text: "hello")
+
+        XCTAssertEqual(result, .failed("app-server handshake failed"))
+    }
+
+    @MainActor
     func testLocalListModelsUsesAppServerConnection() async throws {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(

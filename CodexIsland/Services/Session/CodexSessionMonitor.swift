@@ -12,6 +12,12 @@ import Foundation
 
 @MainActor
 class CodexSessionMonitor: ObservableObject {
+    enum LocalSendResult: Equatable {
+        case sent
+        case initializing
+        case failed(String)
+    }
+
     private static let localAppServerHost = RemoteHostConfig(
         id: "local-app-server",
         name: "Local App Server",
@@ -470,30 +476,43 @@ class CodexSessionMonitor: ObservableObject {
         )
     }
 
-    func sendMessage(sessionId: String, text: String) async -> Bool {
+    func sendMessageResult(sessionId: String, text: String) async -> LocalSendResult {
         if let session = await SessionStore.shared.session(for: sessionId) {
-            if session.provider == .codex,
-               let thread = await ensureAppServerThread(for: session) {
-                do {
-                    try await localAppServerMonitor.sendMessage(thread: thread, text: text)
-                    return true
-                } catch {
-                    return false
+            if session.provider == .codex {
+                switch await ensureAppServerThreadResult(for: session) {
+                case .ready(let thread):
+                    do {
+                        try await localAppServerMonitor.sendMessage(thread: thread, text: text)
+                        return .sent
+                    } catch {
+                        return .failed(error.localizedDescription)
+                    }
+                case .initializing:
+                    return .initializing
+                case .failed(let error):
+                    return .failed(error.localizedDescription)
                 }
             }
 
-            return false
+            return .failed("Session is unavailable for messaging.")
         }
 
         if let thread = threadForSessionId(sessionId) {
             do {
                 try await localAppServerMonitor.sendMessage(thread: thread, text: text)
-                return true
+                return .sent
             } catch {
-                return false
+                return .failed(error.localizedDescription)
             }
         }
 
+        return .failed("Session is unavailable for messaging.")
+    }
+
+    func sendMessage(sessionId: String, text: String) async -> Bool {
+        if case .sent = await sendMessageResult(sessionId: sessionId, text: text) {
+            return true
+        }
         return false
     }
 
@@ -773,34 +792,51 @@ class CodexSessionMonitor: ObservableObject {
         )
     }
 
+    private enum AppServerThreadResolution {
+        case ready(RemoteThreadState)
+        case initializing
+        case failed(RemoteSessionError)
+    }
+
     private func ensureAppServerThread(for session: SessionState) async -> RemoteThreadState? {
-        guard session.provider == .codex else { return nil }
+        if case .ready(let thread) = await ensureAppServerThreadResult(for: session) {
+            return thread
+        }
+        return nil
+    }
+
+    private func ensureAppServerThreadResult(for session: SessionState) async -> AppServerThreadResolution {
+        guard session.provider == .codex else {
+            return .failed(.transport("Session is unavailable for messaging."))
+        }
         let candidateThreadIDs = appServerCandidateThreadIDs(for: session)
 
         if let thread = findKnownAppServerThread(
             for: session,
             candidateThreadIDs: candidateThreadIDs
         ) {
-            return thread
+            return .ready(thread)
         }
         if pendingLocalThreadLoads.contains(session.sessionId) {
-            return nil
+            return .initializing
         }
 
         pendingLocalThreadLoads.insert(session.sessionId)
         defer { pendingLocalThreadLoads.remove(session.sessionId) }
+        var lastError: RemoteSessionError?
 
         for attempt in 0 ..< 4 {
             if let thread = findKnownAppServerThread(
                 for: session,
                 candidateThreadIDs: candidateThreadIDs
             ) {
-                return thread
+                return .ready(thread)
             }
 
             do {
                 try await localAppServerMonitor.refreshHostNow(id: Self.localAppServerHost.id)
             } catch {
+                lastError = presentableLocalThreadLoadError(error)
                 if attempt == 3 {
                     break
                 }
@@ -810,15 +846,18 @@ class CodexSessionMonitor: ObservableObject {
                 for: session,
                 candidateThreadIDs: candidateThreadIDs
             ) {
-                return thread
+                return .ready(thread)
             }
 
             for threadID in candidateThreadIDs {
-                if let openedThread = try? await localAppServerMonitor.openThread(
-                    hostId: Self.localAppServerHost.id,
-                    threadId: threadID
-                ) {
-                    return openedThread
+                do {
+                    let openedThread = try await localAppServerMonitor.openThread(
+                        hostId: Self.localAppServerHost.id,
+                        threadId: threadID
+                    )
+                    return .ready(openedThread)
+                } catch {
+                    lastError = presentableLocalThreadLoadError(error)
                 }
             }
 
@@ -827,7 +866,18 @@ class CodexSessionMonitor: ObservableObject {
             }
         }
 
-        return nil
+        if let lastError {
+            return .failed(lastError)
+        }
+
+        return .initializing
+    }
+
+    private func presentableLocalThreadLoadError(_ error: Error) -> RemoteSessionError {
+        if let remoteError = error as? RemoteSessionError {
+            return remoteError
+        }
+        return .transport(error.localizedDescription)
     }
 
     private func findKnownAppServerThread(

@@ -122,6 +122,9 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
 
     func start() async {
         startCalled = true
+        if let emit {
+            await emit(.connectionState(hostId: "local-app-server", state: .connected))
+        }
     }
 
     func stop() async {

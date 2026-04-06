@@ -1169,11 +1169,11 @@ struct ChatView: View {
     @MainActor
     private func attemptSendMessage(_ text: String) async {
         isSending = true
-        let success = await sendToSession(text)
+        let result = await sendToSession(text)
         isSending = false
 
-        guard success else {
-            showSendFailure("Session is still initializing. Please try again.")
+        guard case .sent = result else {
+            showSendFailure(sendFailureMessage(for: result))
             return
         }
 
@@ -1227,12 +1227,23 @@ struct ChatView: View {
         }
     }
 
-    private func sendToSession(_ text: String) async -> Bool {
+    private func sendToSession(_ text: String) async -> CodexSessionMonitor.LocalSendResult {
         guard let latestSession = latestSession() else {
-            return false
+            return .failed("Session is unavailable for messaging.")
         }
 
-        return await sessionMonitor.sendMessage(sessionId: latestSession.sessionId, text: text)
+        return await sessionMonitor.sendMessageResult(sessionId: latestSession.sessionId, text: text)
+    }
+
+    private func sendFailureMessage(for result: CodexSessionMonitor.LocalSendResult) -> String {
+        switch result {
+        case .sent:
+            return ""
+        case .initializing:
+            return "Session is still initializing. Please try again."
+        case .failed(let message):
+            return message
+        }
     }
 
     private func latestSession() -> SessionState? {
@@ -1416,10 +1427,15 @@ struct ChatView: View {
             }
 
             if let args, !args.isEmpty {
-                let sent = await sessionMonitor.sendMessage(sessionId: latestSession.sessionId, text: args)
-                if !sent {
+                let sendResult = await sessionMonitor.sendMessageResult(
+                    sessionId: latestSession.sessionId,
+                    text: args
+                )
+                if case .sent = sendResult {
+                    return
+                } else {
                     await MainActor.run {
-                        slashFeedbackMessage = "Session is still initializing. Please try again."
+                        slashFeedbackMessage = sendFailureMessage(for: sendResult)
                     }
                 }
             }
