@@ -196,28 +196,7 @@ struct HookInstaller {
             initialContent = ""
         }
 
-        var content = initialContent
-
-        if content.contains("codex_hooks = true") {
-            return
-        }
-
-        if let featuresRange = content.range(of: #"(?m)^\[features\]\s*$"#, options: .regularExpression) {
-            let suffix = content[featuresRange.upperBound...]
-            if let nextSection = suffix.range(of: #"(?m)^\["#, options: .regularExpression) {
-                content.insert(contentsOf: "\ncodex_hooks = true\n", at: nextSection.lowerBound)
-            } else {
-                if !content.hasSuffix("\n") {
-                    content.append("\n")
-                }
-                content.append("codex_hooks = true\n")
-            }
-        } else {
-            if !content.isEmpty && !content.hasSuffix("\n") {
-                content.append("\n")
-            }
-            content.append("\n[features]\ncodex_hooks = true\n")
-        }
+        let content = updatedConfigContentEnablingCodexHooks(initialContent)
 
         if !fileManager.fileExists(atPath: configURL.deletingLastPathComponent().path) {
             do {
@@ -235,6 +214,48 @@ struct HookInstaller {
         } catch {
             throw HookInstallerError.writeConfigFailed(configURL, error)
         }
+    }
+
+    private static func updatedConfigContentEnablingCodexHooks(_ content: String) -> String {
+        let normalizedContent = content.isEmpty || content.hasSuffix("\n") ? content : "\(content)\n"
+
+        guard let featuresRange = normalizedContent.range(of: #"(?m)^\[features\]\s*$"#, options: .regularExpression) else {
+            if normalizedContent.isEmpty {
+                return "[features]\ncodex_hooks = true\n"
+            }
+            return "\(normalizedContent)\n[features]\ncodex_hooks = true\n"
+        }
+
+        let suffix = normalizedContent[featuresRange.upperBound...]
+        let nextSectionRange = suffix.range(of: #"(?m)^\["#, options: .regularExpression)
+        let sectionEnd = nextSectionRange?.lowerBound ?? normalizedContent.endIndex
+        let featureBodyRange = featuresRange.upperBound ..< sectionEnd
+        let featureBody = String(normalizedContent[featureBodyRange])
+
+        if let codexHooksRange = featureBody.range(
+            of: #"(?m)^(\s*codex_hooks\s*=\s*)(true|false)\s*(#.*)?$"#,
+            options: .regularExpression
+        ) {
+            let existingLine = String(featureBody[codexHooksRange])
+            let comment = existingLine.firstIndex(of: "#").map { String(existingLine[$0...]).trimmingCharacters(in: .whitespaces) }
+            var replacement = "codex_hooks = true"
+            if let comment, !comment.isEmpty {
+                replacement.append(" \(comment)")
+            }
+
+            var updatedContent = normalizedContent
+            updatedContent.replaceSubrange(codexHooksRange, with: replacement)
+            return updatedContent
+        }
+
+        var insertion = "codex_hooks = true\n"
+        if !featureBody.isEmpty, !featureBody.hasPrefix("\n") {
+            insertion = "\n" + insertion
+        }
+
+        var updatedContent = normalizedContent
+        updatedContent.insert(contentsOf: insertion, at: sectionEnd)
+        return updatedContent
     }
 
     /// Check if hooks are currently installed
