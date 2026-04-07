@@ -119,7 +119,7 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
     var refreshThreadsHandler: (@Sendable () async throws -> Void)?
     var listModelsHandler: (@Sendable (Bool) async throws -> [RemoteAppServerModel])?
     var listCollaborationModesHandler: (@Sendable () async throws -> [RemoteAppServerCollaborationModeMask])?
-    var transcriptSnapshotHandler: (@Sendable (String, String, Int) async throws -> RemoteTranscriptFallbackSnapshot?)?
+    var transcriptContentHandler: (@Sendable (String, Int) async throws -> String?)?
 
     private(set) var startCalled = false
     private(set) var stopCalled = false
@@ -204,12 +204,11 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
         try await listCollaborationModesHandler?() ?? []
     }
 
-    func loadTranscriptFallbackSnapshot(
-        sessionId: String,
+    func loadTranscriptFallbackContent(
         transcriptPath: String,
-        maxLines: Int
-    ) async throws -> RemoteTranscriptFallbackSnapshot? {
-        try await transcriptSnapshotHandler?(sessionId, transcriptPath, maxLines)
+        maxBytes: Int
+    ) async throws -> String? {
+        try await transcriptContentHandler?(transcriptPath, maxBytes)
     }
 }
 

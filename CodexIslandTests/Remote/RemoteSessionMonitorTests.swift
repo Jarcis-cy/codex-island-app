@@ -826,34 +826,12 @@ final class RemoteSessionMonitorTests: XCTestCase {
             path: "/remote/thread-1.jsonl"
         )
 
-        connection.transcriptSnapshotHandler = { _, _, _ in
-            RemoteTranscriptFallbackSnapshot(
-                history: [
-                    ChatHistoryItem(id: "assistant-1", type: .assistant("plan body"), timestamp: Date())
-                ],
-                pendingInteractions: [
-                    .userInput(PendingUserInputInteraction(
-                        id: "plan-choice",
-                        title: "Codex needs your input",
-                        questions: [
-                            PendingInteractionQuestion(
-                                id: "plan_mode_followup",
-                                header: "Next step",
-                                question: "Implement this plan?",
-                                options: [
-                                    PendingInteractionOption(label: "Yes", description: nil),
-                                    PendingInteractionOption(label: "No", description: nil)
-                                ],
-                                isOther: false,
-                                isSecret: false
-                            )
-                        ],
-                        transport: .codexLocal(callId: nil, turnId: "turn-1")
-                    ))
-                ],
-                transcriptPhase: .waitingForInput,
-                runtimeInfo: .empty
-            )
+        connection.transcriptContentHandler = { _, _ in
+            """
+            {"timestamp":"2026-04-03T08:43:40Z","type":"event_msg","payload":{"type":"task_started","payload":{"turn_id":"turn-1","model_context_window":950000,"collaboration_mode_kind":"plan"}}}
+            {"timestamp":"2026-04-03T08:44:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"plan body"}]}}
+            {"timestamp":"2026-04-03T08:44:11Z","type":"event_msg","payload":{"type":"request_user_input","payload":{"call_id":"call_exit_plan_followup","turn_id":"turn-1","questions":[{"header":"Next step","id":"plan_mode_followup","question":"Implement this plan?","options":[{"label":"Yes","description":null},{"label":"No","description":null}]}]}}}
+            """
         }
 
         let monitor = RemoteSessionMonitor(
@@ -897,15 +875,11 @@ final class RemoteSessionMonitorTests: XCTestCase {
             path: "/remote/thread-1.jsonl"
         )
 
-        connection.transcriptSnapshotHandler = { _, _, _ in
-            RemoteTranscriptFallbackSnapshot(
-                history: [
-                    ChatHistoryItem(id: "assistant-1", type: .assistant("still running"), timestamp: Date())
-                ],
-                pendingInteractions: [],
-                transcriptPhase: .processing,
-                runtimeInfo: .empty
-            )
+        connection.transcriptContentHandler = { _, _ in
+            """
+            {"timestamp":"2026-04-03T01:00:01Z","type":"event_msg","payload":{"type":"task_started","payload":{"turn_id":"turn-1","model_context_window":950000}}}
+            {"timestamp":"2026-04-03T01:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"still running"}]}}
+            """
         }
 
         let monitor = RemoteSessionMonitor(
@@ -979,6 +953,61 @@ final class RemoteSessionMonitorTests: XCTestCase {
         let inserted = try? XCTUnwrap(monitor.threads.first)
         XCTAssertEqual(inserted?.phase, .processing)
         XCTAssertFalse(inserted?.canSendMessage ?? true)
+    }
+
+    func testTranscriptFallbackLogsStepBoundariesOnSuccessfulLoad() async throws {
+        let logger = TestDiagnosticsLogger()
+        let connection = FakeRemoteConnection()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
+        let thread = makeThread(
+            id: "thread-1",
+            preview: "Existing",
+            status: .idle,
+            turns: [],
+            cwd: "/repo",
+            path: "/remote/thread-1.jsonl"
+        )
+
+        connection.transcriptContentHandler = { _, _ in
+            """
+            {"timestamp":"2026-04-03T08:43:40Z","type":"event_msg","payload":{"type":"task_started","payload":{"turn_id":"turn-1","model_context_window":950000,"collaboration_mode_kind":"plan"}}}
+            {"timestamp":"2026-04-03T08:44:00Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"plan body"}]}}
+            {"timestamp":"2026-04-03T08:44:11Z","type":"event_msg","payload":{"type":"request_user_input","payload":{"call_id":"call_exit_plan_followup","turn_id":"turn-1","questions":[{"header":"Next step","id":"plan_mode_followup","question":"Implement this plan?","options":[{"label":"Yes","description":null},{"label":"No","description":null}]}]}}}
+            """
+        }
+
+        let monitor = RemoteSessionMonitor(
+            initialHosts: [host],
+            loadHosts: { [host] in [host] },
+            saveHosts: { _ in },
+            diagnosticsLogger: logger,
+            connectionFactory: { _, emit in
+                connection.emit = emit
+                return connection
+            }
+        )
+        TestObjectRetainer.retain(monitor)
+
+        monitor.startMonitoring()
+        monitor.apply(event: .connectionState(hostId: host.id, state: .connected))
+        monitor.apply(event: .threadList(hostId: host.id, threads: [thread]))
+
+        try await waitUntil {
+            let records = await logger.records
+            return records.contains { $0.message == "Completed transcript fallback apply" }
+        }
+
+        let updated = try XCTUnwrap(monitor.threads.first)
+        XCTAssertEqual(updated.phase, .waitingForInput)
+        XCTAssertEqual(updated.history.last?.type, .assistant("plan body"))
+
+        let records = await logger.records
+        XCTAssertTrue(records.contains { $0.message == "Started transcript fallback ssh-tail" })
+        XCTAssertTrue(records.contains { $0.message == "Completed transcript fallback ssh-tail" })
+        XCTAssertTrue(records.contains { $0.message == "Started transcript fallback parser" })
+        XCTAssertTrue(records.contains { $0.message == "Completed transcript fallback parser" })
+        XCTAssertTrue(records.contains { $0.message == "Started transcript fallback apply" })
+        XCTAssertTrue(records.contains { $0.message == "Completed transcript fallback apply" })
     }
 
     func testStartFreshThreadBypassesLogicalSessionReuse() async throws {

@@ -399,6 +399,90 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         await connection.stop()
     }
 
+    func testLoadTranscriptFallbackContentUsesByteTailOverSSH() async throws {
+        let logger = TestDiagnosticsLogger()
+        let recorder = RemoteEventRecorder()
+        let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
+        final class InvocationBox: @unchecked Sendable {
+            var executable = ""
+            var arguments: [String] = []
+        }
+        let invocation = InvocationBox()
+
+        let connection = RemoteAppServerConnection(
+            host: host,
+            emit: { event in await recorder.append(event) },
+            dependencies: RemoteAppServerConnectionDependencies(
+                transportFactory: { _ in TestTransport() },
+                processExecutor: TestProcessExecutor(
+                    runHandler: { executable, arguments in
+                        invocation.executable = executable
+                        invocation.arguments = arguments
+                        return "{\"timestamp\":\"2026-04-03T01:00:01Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"payload\":{\"turn_id\":\"turn-1\"}}}"
+                    }
+                ),
+                diagnosticsLogger: logger,
+                requestTimeout: .seconds(1),
+                initialRefreshDelay: .seconds(60),
+                refreshInterval: .seconds(60),
+                sleep: { duration in
+                    try await Task.sleep(for: duration)
+                }
+            )
+        )
+
+        let content = try await connection.loadTranscriptFallbackContent(
+            transcriptPath: "/remote/thread.jsonl",
+            maxBytes: 4096
+        )
+
+        XCTAssertNotNil(content)
+        XCTAssertEqual(invocation.executable, "/usr/bin/ssh")
+        XCTAssertTrue(invocation.arguments.contains("ssh-target"))
+        XCTAssertTrue(invocation.arguments.contains("tail -c 65536 -- '/remote/thread.jsonl'"))
+    }
+
+    func testLoadTranscriptFallbackContentReadsTrailingBytesLocally() async throws {
+        let logger = TestDiagnosticsLogger()
+        let recorder = RemoteEventRecorder()
+        let host = RemoteHostConfig(id: "local", name: "Local", sshTarget: "local-app-server", defaultCwd: "", isEnabled: true)
+        let temporaryDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: true)
+        defer {
+            try? FileManager.default.removeItem(at: temporaryDirectory)
+        }
+
+        let transcriptURL = temporaryDirectory.appendingPathComponent("thread.jsonl")
+        let prefix = String(repeating: "x", count: 70_000)
+        let suffix = #"{"timestamp":"2026-04-03T01:00:01Z","type":"event_msg","payload":{"type":"task_started","payload":{"turn_id":"turn-1"}}}"#
+        try (prefix + suffix).write(to: transcriptURL, atomically: true, encoding: .utf8)
+
+        let connection = RemoteAppServerConnection(
+            host: host,
+            emit: { event in await recorder.append(event) },
+            dependencies: RemoteAppServerConnectionDependencies(
+                transportFactory: { _ in TestTransport() },
+                processExecutor: TestProcessExecutor(),
+                diagnosticsLogger: logger,
+                requestTimeout: .seconds(1),
+                initialRefreshDelay: .seconds(60),
+                refreshInterval: .seconds(60),
+                sleep: { duration in
+                    try await Task.sleep(for: duration)
+                }
+            )
+        )
+
+        let content = try await connection.loadTranscriptFallbackContent(
+            transcriptPath: transcriptURL.path,
+            maxBytes: 4096
+        )
+
+        XCTAssertTrue(content?.hasSuffix(suffix) ?? false)
+        XCTAssertLessThanOrEqual(content?.lengthOfBytes(using: .utf8) ?? .max, 65_536)
+    }
+
     // 测试里直接从发出的 JSON-RPC envelope 取请求 id，用于把模拟响应精确送回对应 await。
     private func extractID(from line: String) throws -> Int {
         let data = Data(line.utf8)

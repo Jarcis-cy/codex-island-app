@@ -82,11 +82,10 @@ nonisolated protocol RemoteAppServerConnectionProtocol: Sendable {
     func refreshThreads() async throws
     func listModels(includeHidden: Bool) async throws -> [RemoteAppServerModel]
     func listCollaborationModes() async throws -> [RemoteAppServerCollaborationModeMask]
-    func loadTranscriptFallbackSnapshot(
-        sessionId: String,
+    func loadTranscriptFallbackContent(
         transcriptPath: String,
-        maxLines: Int
-    ) async throws -> RemoteTranscriptFallbackSnapshot?
+        maxBytes: Int
+    ) async throws -> String?
 }
 
 extension RemoteAppServerConnectionProtocol {
@@ -161,6 +160,29 @@ actor RemoteRequestSerialGate {
     }
 }
 
+private func withTimeout<T: Sendable>(
+    _ timeout: Duration,
+    errorMessage: String,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { duration in
+        try await Task.sleep(for: duration)
+    },
+    operation: @escaping @Sendable () async throws -> T
+) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        group.addTask {
+            try await operation()
+        }
+        group.addTask {
+            try await sleep(timeout)
+            throw RemoteSessionError.timeout(errorMessage)
+        }
+
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
+    }
+}
+
 @MainActor
 final class RemoteSessionMonitor: ObservableObject {
     private struct OptimisticRemoteUserMessage: Sendable {
@@ -180,6 +202,10 @@ final class RemoteSessionMonitor: ObservableObject {
     @Published private(set) var hostActionInProgress: Set<String> = []
 
     private let transcriptFallbackProvisionalBusyWindow: TimeInterval = 15
+    private let transcriptFallbackSSHTimeout: Duration
+    private let transcriptFallbackParseTimeout: Duration
+    private let transcriptFallbackApplyTimeout: Duration
+    private let transcriptFallbackMaxBytes: Int
 
     private let saveHosts: ([RemoteHostConfig]) -> Void
     private let connectionFactory: (
@@ -202,6 +228,10 @@ final class RemoteSessionMonitor: ObservableObject {
         loadHosts: (() -> [RemoteHostConfig])? = nil,
         saveHosts: (([RemoteHostConfig]) -> Void)? = nil,
         diagnosticsLogger: any RemoteDiagnosticsLogging = RemoteDiagnosticsLogger.shared,
+        transcriptFallbackSSHTimeout: Duration = .seconds(8),
+        transcriptFallbackParseTimeout: Duration = .seconds(2),
+        transcriptFallbackApplyTimeout: Duration = .seconds(1),
+        transcriptFallbackMaxBytes: Int = 256 * 1024,
         connectionFactory: @escaping (
             RemoteHostConfig,
             @escaping @Sendable (RemoteConnectionEvent) async -> Void
@@ -212,6 +242,10 @@ final class RemoteSessionMonitor: ObservableObject {
         self.hosts = initialHosts ?? loadHosts?() ?? AppSettings.remoteHosts
         self.saveHosts = saveHosts ?? { AppSettings.remoteHosts = $0 }
         self.diagnosticsLogger = diagnosticsLogger
+        self.transcriptFallbackSSHTimeout = transcriptFallbackSSHTimeout
+        self.transcriptFallbackParseTimeout = transcriptFallbackParseTimeout
+        self.transcriptFallbackApplyTimeout = transcriptFallbackApplyTimeout
+        self.transcriptFallbackMaxBytes = transcriptFallbackMaxBytes
         self.connectionFactory = connectionFactory
     }
 
@@ -1539,6 +1573,11 @@ final class RemoteSessionMonitor: ObservableObject {
                 }
             }
 
+            let maxBytes = self?.transcriptFallbackMaxBytes ?? 256 * 1024
+            let sshTimeout = self?.transcriptFallbackSSHTimeout ?? .seconds(8)
+            let parseTimeout = self?.transcriptFallbackParseTimeout ?? .seconds(2)
+            let applyTimeout = self?.transcriptFallbackApplyTimeout ?? .seconds(1)
+
             await self?.logMonitorEvent(
                 level: .debug,
                 hostId: hostId,
@@ -1549,10 +1588,56 @@ final class RemoteSessionMonitor: ObservableObject {
             )
 
             do {
-                let snapshot = try await connection.loadTranscriptFallbackSnapshot(
-                    sessionId: thread.id,
-                    transcriptPath: transcriptPath,
-                    maxLines: 400
+                let content = try await self?.runTranscriptFallbackStep(
+                    hostId: hostId,
+                    threadId: thread.id,
+                    stage: "ssh-tail",
+                    timeout: sshTimeout,
+                    startPayload: "path=\(transcriptPath) maxBytes=\(maxBytes)",
+                    successPayload: { content in
+                        let byteCount = content?.lengthOfBytes(using: .utf8) ?? 0
+                        return "path=\(transcriptPath) bytes=\(byteCount)"
+                    }
+                ) {
+                    try await connection.loadTranscriptFallbackContent(
+                        transcriptPath: transcriptPath,
+                        maxBytes: maxBytes
+                    )
+                }
+
+                guard let content,
+                      !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    await self?.logMonitorEvent(
+                        level: .debug,
+                        hostId: hostId,
+                        method: "transcript-fallback",
+                        threadId: thread.id,
+                        message: "Loaded transcript fallback snapshot",
+                        payload: "snapshot=nil"
+                    )
+                    return
+                }
+
+                let parsed = try await self?.runTranscriptFallbackStep(
+                    hostId: hostId,
+                    threadId: thread.id,
+                    stage: "parser",
+                    timeout: parseTimeout,
+                    startPayload: "path=\(transcriptPath)",
+                    successPayload: { parsed in
+                        "phase=\(parsed.transcriptPhase?.description ?? "nil") pending=\(parsed.pendingInteractions.count) history=\(parsed.history.count)"
+                    }
+                ) {
+                    await CodexConversationParser.shared.parseContent(sessionId: thread.id, content: content)
+                }
+
+                guard let parsed else { return }
+
+                let snapshot = RemoteTranscriptFallbackSnapshot(
+                    history: parsed.history,
+                    pendingInteractions: parsed.pendingInteractions,
+                    transcriptPhase: parsed.transcriptPhase,
+                    runtimeInfo: parsed.runtimeInfo
                 )
                 await self?.logMonitorEvent(
                     level: .debug,
@@ -1560,12 +1645,22 @@ final class RemoteSessionMonitor: ObservableObject {
                     method: "transcript-fallback",
                     threadId: thread.id,
                     message: "Loaded transcript fallback snapshot",
-                    payload: snapshot.map {
-                        "phase=\($0.transcriptPhase?.description ?? "nil") pending=\($0.pendingInteractions.count) history=\($0.history.count)"
-                    } ?? "snapshot=nil"
+                    payload: "phase=\(snapshot.transcriptPhase?.description ?? "nil") pending=\(snapshot.pendingInteractions.count) history=\(snapshot.history.count)"
                 )
-                await MainActor.run {
-                    self?.applyTranscriptFallback(hostId: hostId, threadId: thread.id, snapshot: snapshot)
+
+                _ = try await self?.runTranscriptFallbackStep(
+                    hostId: hostId,
+                    threadId: thread.id,
+                    stage: "apply",
+                    timeout: applyTimeout,
+                    startPayload: "phase=\(snapshot.transcriptPhase?.description ?? "nil") pending=\(snapshot.pendingInteractions.count) history=\(snapshot.history.count)",
+                    successPayload: { _ in
+                        "threadId=\(thread.id)"
+                    }
+                ) {
+                    await MainActor.run {
+                        self?.applyTranscriptFallback(hostId: hostId, threadId: thread.id, snapshot: snapshot)
+                    }
                 }
             } catch {
                 await self?.logMonitorEvent(
@@ -1577,6 +1672,56 @@ final class RemoteSessionMonitor: ObservableObject {
                     payload: error.localizedDescription
                 )
             }
+        }
+    }
+
+    private func runTranscriptFallbackStep<T: Sendable>(
+        hostId: String,
+        threadId: String,
+        stage: String,
+        timeout: Duration,
+        startPayload: String? = nil,
+        successPayload: ((T) -> String?)? = nil,
+        operation: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        await logMonitorEvent(
+            level: .debug,
+            hostId: hostId,
+            method: "transcript-fallback",
+            threadId: threadId,
+            message: "Started transcript fallback \(stage)",
+            payload: startPayload
+        )
+
+        do {
+            let result = try await withTimeout(
+                timeout,
+                errorMessage: "Timed out waiting for transcript fallback \(stage)"
+            ) {
+                try await operation()
+            }
+
+            await logMonitorEvent(
+                level: .debug,
+                hostId: hostId,
+                method: "transcript-fallback",
+                threadId: threadId,
+                message: "Completed transcript fallback \(stage)",
+                payload: successPayload?(result)
+            )
+            return result
+        } catch {
+            if case .timeout = error as? RemoteSessionError {
+                await logMonitorEvent(
+                    level: .warning,
+                    hostId: hostId,
+                    method: "transcript-fallback",
+                    threadId: threadId,
+                    message: "Timed out transcript fallback \(stage)",
+                    payload: error.localizedDescription
+                )
+            }
+            throw error
         }
     }
 
@@ -2587,43 +2732,60 @@ actor RemoteAppServerConnection: RemoteAppServerConnectionProtocol {
         return response.data
     }
 
-    func loadTranscriptFallbackSnapshot(
-        sessionId: String,
+    func loadTranscriptFallbackContent(
         transcriptPath: String,
-        maxLines: Int
-    ) async throws -> RemoteTranscriptFallbackSnapshot? {
+        maxBytes: Int
+    ) async throws -> String? {
         let trimmedPath = transcriptPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty else { return nil }
+        let byteLimit = max(64 * 1024, maxBytes)
 
         let content: String
         if host.sshTarget == "local-app-server" {
-            guard let data = FileManager.default.contents(atPath: trimmedPath),
+            guard let data = try readTrailingTranscriptBytes(path: trimmedPath, maxBytes: byteLimit),
                   let decoded = String(data: data, encoding: .utf8) else {
                 return nil
             }
             content = decoded
         } else {
-            let command = "tail -n \(max(50, maxLines)) -- \(shellQuoted(trimmedPath))"
-            content = try await dependencies.processExecutor.run("/usr/bin/ssh", arguments: [
-                "-T",
-                "-o", "BatchMode=yes",
-                "-o", "ConnectTimeout=5",
-                host.sshTarget,
-                command
-            ])
+            let command = "tail -c \(byteLimit) -- \(shellQuoted(trimmedPath))"
+            content = try await withTimeout(
+                .seconds(6),
+                errorMessage: "Timed out waiting for transcript fallback SSH tail"
+            ) { [self] in
+                try await self.dependencies.processExecutor.run("/usr/bin/ssh", arguments: [
+                    "-T",
+                    "-o", "BatchMode=yes",
+                    "-o", "ConnectTimeout=5",
+                    self.host.sshTarget,
+                    command
+                ])
+            }
         }
 
         guard !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return nil
         }
 
-        let parsed = await CodexConversationParser.shared.parseContent(sessionId: sessionId, content: content)
-        return RemoteTranscriptFallbackSnapshot(
-            history: parsed.history,
-            pendingInteractions: parsed.pendingInteractions,
-            transcriptPhase: parsed.transcriptPhase,
-            runtimeInfo: parsed.runtimeInfo
-        )
+        return content
+    }
+
+    private func readTrailingTranscriptBytes(path: String, maxBytes: Int) throws -> Data? {
+        let fileURL = URL(fileURLWithPath: path)
+        guard FileManager.default.fileExists(atPath: fileURL.path) else {
+            return nil
+        }
+
+        let handle = try FileHandle(forReadingFrom: fileURL)
+        defer {
+            try? handle.close()
+        }
+
+        let fileSize = try handle.seekToEnd()
+        let byteCount = UInt64(max(1, maxBytes))
+        let startOffset = fileSize > byteCount ? fileSize - byteCount : 0
+        try handle.seek(toOffset: startOffset)
+        return try handle.readToEnd()
     }
 
     private func initialize() async throws {
