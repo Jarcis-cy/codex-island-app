@@ -10,6 +10,8 @@ import Foundation
 actor CodexConversationParser {
     static let shared = CodexConversationParser()
 
+    // Exposes the subset of snapshot state that callers need when they already
+    // have transcript content in memory instead of a file path on disk.
     nonisolated struct ParsedHistorySnapshot: Sendable {
         let history: [ChatHistoryItem]
         let pendingInteractions: [PendingInteraction]
@@ -17,6 +19,10 @@ actor CodexConversationParser {
         let runtimeInfo: SessionRuntimeInfo
     }
 
+    // Snapshot is the parser's canonical, cacheable view of one transcript
+    // revision. All public accessors read from this model so file parsing,
+    // message ordering, pending interaction tracking, and conversation summary
+    // stay consistent.
     private struct Snapshot {
         let modificationDate: Date
         let messages: [ChatMessage]
@@ -176,6 +182,9 @@ actor CodexConversationParser {
         var transcriptPhase: SessionPhase?
         var runtimeInfo = SessionRuntimeInfo.empty
 
+        // Local Codex transcripts are append-only JSONL. We intentionally parse
+        // line-by-line and tolerate malformed records so one bad event does not
+        // hide the rest of the conversation from the UI.
         let lines = content.components(separatedBy: .newlines).filter { !$0.isEmpty }
         for (lineIndex, line) in lines.enumerated() {
             guard let lineData = line.data(using: .utf8),
@@ -233,6 +242,10 @@ actor CodexConversationParser {
 
         messages.sort { $0.timestamp < $1.timestamp }
         let orderedPendingInteractions: [PendingInteraction]
+        // Plan mode can emit a proposed plan marker without an explicit
+        // request_user_input tool call. We synthesize a single follow-up
+        // interaction so the local UI still offers the expected "implement or
+        // keep planning" decision.
         if pendingInteractionOrder.isEmpty, let proposedPlanPendingInteraction {
             orderedPendingInteractions = [proposedPlanPendingInteraction]
         } else {
@@ -355,6 +368,9 @@ actor CodexConversationParser {
             return nested
         }
 
+        // Older transcript events flatten fields at the top level, while newer
+        // app-server events nest them under payload. Normalizing here keeps the
+        // downstream event parser compatible with both shapes.
         var flattened = payload
         flattened.removeValue(forKey: "type")
         return flattened
@@ -365,6 +381,9 @@ actor CodexConversationParser {
             runtimeInfo.model = model
         }
 
+        // Different transcript producers have used reasoning_effort directly or
+        // a shorter effort key. We prefer the nested collaboration payload when
+        // present and fall back to legacy fields for older sessions.
         if let collaboration = turnContextPayload["collaboration_mode"] as? [String: Any],
            let settings = collaboration["settings"] as? [String: Any],
            let reasoningEffort = settings["reasoning_effort"] as? String,
@@ -456,6 +475,10 @@ actor CodexConversationParser {
     ) {
         guard let payloadType = payload["type"] as? String else { return }
 
+        // response_item represents assistant-authored artifacts: chat messages,
+        // reasoning summaries, tool calls, and tool outputs. Pending
+        // interactions discovered here are request-* tool calls that the Codex
+        // client encoded as normal tools instead of event_msg records.
         switch payloadType {
         case "message":
             let rawRole = payload["role"] as? String
@@ -634,6 +657,9 @@ actor CodexConversationParser {
         proposedPlanPendingInteraction: inout PendingInteraction?,
         transcriptPhase: inout SessionPhase?
     ) {
+        // event_msg carries lifecycle transitions and app-server sideband
+        // events. Unlike response_item, these records can invalidate pending
+        // UI state even when no new chat message was emitted.
         switch eventType {
         case "task_started":
             pendingInteractions.removeAll()
@@ -800,6 +826,9 @@ actor CodexConversationParser {
     }
 
     private func normalizeMessageText(_ text: String) -> (text: String, containsProposedPlan: Bool) {
+        // Proposed plans are wrapped in XML-like tags that should not surface in
+        // chat history, but they still carry control-flow meaning for the local
+        // plan-mode follow-up prompt.
         let containsProposedPlan = text.contains("<proposed_plan>") || text.contains("</proposed_plan>")
         guard containsProposedPlan else {
             return (text, false)
@@ -874,6 +903,10 @@ actor CodexConversationParser {
         toolName: String,
         arguments: String?
     ) -> PendingInteraction? {
+        // request_user_input and request_permissions may arrive as tool calls in
+        // local transcripts before the UI sees a dedicated event. We materialize
+        // the pending interaction immediately so the history view and approval
+        // UI stay responsive during replay.
         switch toolName {
         case "request_user_input":
             guard let json = parseJSONArguments(arguments),
@@ -917,6 +950,9 @@ actor CodexConversationParser {
     }
 
     private func parseRequestUserInputEvent(payload: [String: Any]) -> PendingInteraction? {
+        // The request identifier field changed names across transcript
+        // versions. Accepting all known spellings prevents older sessions from
+        // silently losing pending questions when reopened.
         let callId = payload["call_id"] as? String ??
             payload["item_id"] as? String ??
             payload["itemId"] as? String ??
@@ -1028,6 +1064,8 @@ actor CodexConversationParser {
         guard let value else { return .none }
 
         let networkValue = value["network"] as? [String: Any]
+        // fileSystem was camelCase in newer payloads and snake_case in older
+        // ones. Keep both until all persisted transcripts migrate.
         let fileSystemValue = value["fileSystem"] as? [String: Any] ?? value["file_system"] as? [String: Any]
 
         return InteractionPermissionProfile(
