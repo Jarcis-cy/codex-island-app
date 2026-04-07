@@ -666,18 +666,14 @@ final class RemoteSessionMonitorTests: XCTestCase {
     }
 
     func testStartThreadReturnsExistingLogicalSessionForSameCwd() async throws {
-        final class CallTracker: @unchecked Sendable {
-            var didCallStart = false
-        }
-
         let logger = TestDiagnosticsLogger()
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
         let existingThread = makeThread(id: "thread-existing", preview: "Existing", cwd: "/repo")
-        let tracker = CallTracker()
+        let tracker = LockedValueBox(false)
 
         connection.startThreadHandler = { _ in
-            tracker.didCallStart = true
+            tracker.set(true)
             return makeThreadStartResponse(thread: makeThread(id: "thread-new", preview: "New", cwd: "/repo"))
         }
 
@@ -698,7 +694,7 @@ final class RemoteSessionMonitorTests: XCTestCase {
 
         let opened = try await monitor.startThread(hostId: host.id)
 
-        XCTAssertFalse(tracker.didCallStart)
+        XCTAssertFalse(tracker.get())
         XCTAssertEqual(opened.threadId, "thread-existing")
         XCTAssertEqual(monitor.threads.count, 1)
     }
@@ -1087,13 +1083,10 @@ final class RemoteSessionMonitorTests: XCTestCase {
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
         let existingThread = makeThread(id: "thread-existing", preview: "Existing", cwd: "/repo")
         let freshThread = makeThread(id: "thread-new", preview: "Fresh", cwd: "/repo")
-        final class StartTracker: @unchecked Sendable {
-            var didCallStart = false
-        }
-        let tracker = StartTracker()
+        let tracker = LockedValueBox(false)
 
         connection.startThreadHandler = { _ in
-            tracker.didCallStart = true
+            tracker.set(true)
             return makeThreadStartResponse(thread: freshThread)
         }
 
@@ -1114,7 +1107,7 @@ final class RemoteSessionMonitorTests: XCTestCase {
 
         let opened = try await monitor.startFreshThread(hostId: host.id)
 
-        XCTAssertTrue(tracker.didCallStart)
+        XCTAssertTrue(tracker.get())
         XCTAssertEqual(opened.threadId, "thread-new")
         XCTAssertEqual(monitor.threads.count, 1)
         XCTAssertEqual(monitor.threads.first?.threadId, "thread-new")
@@ -1325,16 +1318,13 @@ final class RemoteSessionMonitorTests: XCTestCase {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "/repo", isEnabled: true)
         let freshThread = makeThread(id: "thread-new", preview: "New", cwd: "/repo")
-        final class ResumeTracker: @unchecked Sendable {
-            var didResume = false
-        }
-        let tracker = ResumeTracker()
+        let tracker = LockedValueBox(false)
 
         connection.startThreadHandler = { _ in
             makeThreadStartResponse(thread: freshThread)
         }
         connection.resumeThreadHandler = { _, _ in
-            tracker.didResume = true
+            tracker.set(true)
             return makeThreadResumeResponse(thread: freshThread)
         }
 
@@ -1359,7 +1349,7 @@ final class RemoteSessionMonitorTests: XCTestCase {
         }
 
         XCTAssertEqual(callbackThread.threadId, "thread-new")
-        XCTAssertFalse(tracker.didResume)
+        XCTAssertFalse(tracker.get())
     }
 }
 

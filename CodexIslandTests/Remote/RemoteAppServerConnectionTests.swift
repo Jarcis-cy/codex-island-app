@@ -403,11 +403,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         let logger = TestDiagnosticsLogger()
         let recorder = RemoteEventRecorder()
         let host = RemoteHostConfig(id: "host-1", name: "Remote", sshTarget: "ssh-target", defaultCwd: "", isEnabled: true)
-        final class InvocationBox: @unchecked Sendable {
-            var executable = ""
-            var arguments: [String] = []
-        }
-        let invocation = InvocationBox()
+        let invocation = LockedValueBox((executable: "", arguments: [String]()))
 
         let connection = RemoteAppServerConnection(
             host: host,
@@ -416,8 +412,7 @@ final class RemoteAppServerConnectionTests: XCTestCase {
                 transportFactory: { _ in TestTransport() },
                 processExecutor: TestProcessExecutor(
                     runHandler: { executable, arguments in
-                        invocation.executable = executable
-                        invocation.arguments = arguments
+                        invocation.set((executable: executable, arguments: arguments))
                         return "{\"timestamp\":\"2026-04-03T01:00:01Z\",\"type\":\"event_msg\",\"payload\":{\"type\":\"task_started\",\"payload\":{\"turn_id\":\"turn-1\"}}}"
                     }
                 ),
@@ -437,9 +432,10 @@ final class RemoteAppServerConnectionTests: XCTestCase {
         )
 
         XCTAssertNotNil(content)
-        XCTAssertEqual(invocation.executable, "/usr/bin/ssh")
-        XCTAssertTrue(invocation.arguments.contains("ssh-target"))
-        XCTAssertTrue(invocation.arguments.contains("tail -c 65536 -- '/remote/thread.jsonl'"))
+        let capturedInvocation = invocation.get()
+        XCTAssertEqual(capturedInvocation.executable, "/usr/bin/ssh")
+        XCTAssertTrue(capturedInvocation.arguments.contains("ssh-target"))
+        XCTAssertTrue(capturedInvocation.arguments.contains("tail -c 65536 -- '/remote/thread.jsonl'"))
     }
 
     func testLoadTranscriptFallbackContentReadsTrailingBytesLocally() async throws {

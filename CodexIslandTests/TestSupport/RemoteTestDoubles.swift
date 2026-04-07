@@ -106,6 +106,34 @@ enum TestObjectRetainer {
     }
 }
 
+final class LockedValueBox<Value: Sendable>: @unchecked Sendable {
+    nonisolated private let lock = NSLock()
+    nonisolated(unsafe) private var value: Value
+
+    init(_ value: Value) {
+        self.value = value
+    }
+
+    nonisolated func set(_ newValue: Value) {
+        lock.lock()
+        value = newValue
+        lock.unlock()
+    }
+
+    nonisolated func withValue(_ body: (inout Value) -> Void) {
+        lock.lock()
+        body(&value)
+        lock.unlock()
+    }
+
+    nonisolated func get() -> Value {
+        lock.lock()
+        let snapshot = value
+        lock.unlock()
+        return snapshot
+    }
+}
+
 // FakeRemoteConnection 让测试按需拼装 thread/start、respond、refresh 等单个能力，不必走完整协议栈。
 final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked Sendable {
     var emit: (@Sendable (RemoteConnectionEvent) async -> Void)?
@@ -213,7 +241,7 @@ final class FakeRemoteConnection: RemoteAppServerConnectionProtocol, @unchecked 
 }
 
 // 统一的线程夹具，避免每个测试都手写一份最小 thread payload。
-func makeThread(
+nonisolated func makeThread(
     id: String = "thread-1",
     preview: String = "Preview",
     status: RemoteAppServerThreadStatus = .idle,
@@ -239,7 +267,7 @@ func makeThread(
 }
 
 // thread/start 响应经常要补一组默认策略字段，这里集中提供稳定夹具。
-func makeThreadStartResponse(
+nonisolated func makeThreadStartResponse(
     thread: RemoteAppServerThread,
     model: String = "gpt-5.4",
     modelProvider: String = "openai",
@@ -265,7 +293,7 @@ func makeThreadStartResponse(
     )
 }
 
-func makeThreadResumeResponse(
+nonisolated func makeThreadResumeResponse(
     thread: RemoteAppServerThread,
     model: String = "gpt-5.4",
     modelProvider: String = "openai",

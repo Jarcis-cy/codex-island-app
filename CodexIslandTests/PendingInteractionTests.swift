@@ -152,7 +152,9 @@ final class PendingInteractionTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(400))
         }
         harness.connection.resumeThreadHandler = { threadId, _ in
-            makeThreadResumeResponse(thread: makeThread(id: threadId, preview: "Recovered", cwd: "/tmp/project"))
+            return makeThreadResumeResponse(
+                thread: makeThread(id: threadId, preview: "Recovered", cwd: "/tmp/project")
+            )
         }
 
         harness.localMonitor.startMonitoring()
@@ -497,7 +499,9 @@ final class PendingInteractionTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(400))
         }
         harness.connection.resumeThreadHandler = { threadId, _ in
-            makeThreadResumeResponse(thread: makeThread(id: threadId, preview: "Recovered", cwd: "/tmp"))
+            return makeThreadResumeResponse(
+                thread: makeThread(id: threadId, preview: "Recovered", cwd: "/tmp")
+            )
         }
 
         harness.localMonitor.startMonitoring()
@@ -611,7 +615,7 @@ final class PendingInteractionTests: XCTestCase {
         harness.connection.resumeThreadHandler = { threadId, turnContext in
             XCTAssertEqual(threadId, "session-1")
             await capturedContext.set(turnContext)
-            return await makeThreadResumeResponse(
+            return makeThreadResumeResponse(
                 thread: makeThread(id: "session-1", status: .idle),
                 model: turnContext?.model ?? "gpt-5.4",
                 approvalPolicy: turnContext?.approvalPolicy ?? .onRequest,
@@ -1098,7 +1102,7 @@ final class PendingInteractionTests: XCTestCase {
         let capturedCwd = LockedBox<String?>(nil)
         connection.startThreadHandler = { defaultCwd in
             await capturedCwd.set(defaultCwd)
-            return await makeThreadStartResponse(
+            return makeThreadStartResponse(
                 thread: makeThread(
                     id: "fresh-local-thread",
                     preview: "Fresh Local",

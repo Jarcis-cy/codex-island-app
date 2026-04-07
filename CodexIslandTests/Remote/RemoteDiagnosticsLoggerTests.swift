@@ -2,24 +2,6 @@ import XCTest
 @testable import Codex_Island
 
 final class RemoteDiagnosticsLoggerTests: XCTestCase {
-    private final class FailureRecorder: @unchecked Sendable {
-        private let lock = NSLock()
-        private var messages: [String] = []
-
-        func append(_ message: String) {
-            lock.lock()
-            messages.append(message)
-            lock.unlock()
-        }
-
-        func snapshot() -> [String] {
-            lock.lock()
-            let value = messages
-            lock.unlock()
-            return value
-        }
-    }
-
     // 这些回归覆盖三个关键语义：写 JSONL、达到阈值滚动、用户关闭开关后完全不落盘。
     func testLoggerWritesJSONLines() async throws {
         let directory = FileManager.default.temporaryDirectory
@@ -97,14 +79,14 @@ final class RemoteDiagnosticsLoggerTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         try Data("blocked".utf8).write(to: blockedURL)
 
-        let recorder = FailureRecorder()
+        let recorder = LockedValueBox([String]())
         let logger = RemoteDiagnosticsLogger(
             directoryURL: blockedURL,
             maxFileSizeBytes: 1024,
             maxRotatedFiles: 3,
             isEnabled: { true },
             reportFailure: { message in
-                recorder.append(message)
+                recorder.withValue { $0.append(message) }
             }
         )
 
@@ -116,7 +98,8 @@ final class RemoteDiagnosticsLoggerTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(recorder.snapshot().count, 1)
-        XCTAssertTrue(recorder.snapshot().first?.contains("Failed to persist remote diagnostics") == true)
+        let recordedMessages = recorder.get()
+        XCTAssertEqual(recordedMessages.count, 1)
+        XCTAssertTrue(recordedMessages.first?.contains("Failed to persist remote diagnostics") == true)
     }
 }
