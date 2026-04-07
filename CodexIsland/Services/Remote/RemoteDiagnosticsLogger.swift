@@ -7,10 +7,16 @@
 
 import Foundation
 
+/// Minimal sink interface so remote monitoring code can log diagnostics without
+/// depending on the concrete file-backed actor.
 nonisolated protocol RemoteDiagnosticsLogging: Sendable {
     func log(_ record: RemoteDiagnosticsRecord) async
 }
 
+/// One JSONL row written by `RemoteDiagnosticsLogger`.
+///
+/// Fields are intentionally sparse: each caller only fills the identifiers that
+/// help correlate a transport lifecycle event, request/response pair, or retry.
 nonisolated struct RemoteDiagnosticsRecord: Codable, Sendable {
     nonisolated enum Level: String, Codable, Sendable {
         case debug
@@ -76,6 +82,10 @@ nonisolated struct RemoteDiagnosticsRecord: Codable, Sendable {
     }
 }
 
+/// Persists remote app-server diagnostics as newline-delimited JSON.
+///
+/// The logger is intentionally best-effort: diagnostics must never block the
+/// remote session pipeline, so any filesystem/encoding failure is dropped.
 actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
     static let shared = RemoteDiagnosticsLogger()
 
@@ -110,6 +120,8 @@ actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
         do {
             try ensureDirectoryExists()
             let data = try encoder.encode(record)
+            // Rotation happens before append so each record stays as one intact
+            // JSONL line instead of being split across current/rotated files.
             try rotateIfNeeded(incomingByteCount: data.count + 1)
             if !fileManager.fileExists(atPath: fileURL.path) {
                 fileManager.createFile(atPath: fileURL.path, contents: nil)
@@ -134,6 +146,8 @@ actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
         let currentSize = (attributes[.size] as? NSNumber)?.intValue ?? 0
         guard currentSize + incomingByteCount > maxFileSizeBytes else { return }
 
+        // Keep the newest archive slots by shifting N-1 -> N, then move the
+        // active file into `.1`. Anything beyond `maxRotatedFiles` is discarded.
         let oldestURL = rotatedFileURL(index: maxRotatedFiles - 1)
         if fileManager.fileExists(atPath: oldestURL.path) {
             try fileManager.removeItem(at: oldestURL)
@@ -164,6 +178,8 @@ actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
         directoryURL.appendingPathComponent("remote-app-server.\(index).jsonl")
     }
 
+    /// Diagnostics live under Application Support so they survive restarts and
+    /// match the rest of the app's local state footprint.
     nonisolated private static func defaultLogsDirectory(fileManager: FileManager) -> URL {
         let baseDirectory = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSTemporaryDirectory())

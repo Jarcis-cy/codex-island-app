@@ -7,6 +7,9 @@
 
 import Foundation
 
+/// Line-oriented app-server transport used by both local and SSH-backed
+/// connections. Implementations are responsible for surfacing stdout, stderr,
+/// and process termination as separate signals to the monitor layer.
 nonisolated protocol RemoteAppServerTransport: Sendable {
     func start(
         onStdoutLine: @escaping @Sendable (String) async -> Void,
@@ -17,6 +20,9 @@ nonisolated protocol RemoteAppServerTransport: Sendable {
     func stop() async
 }
 
+/// Launches a child process and exposes its stdio as newline-delimited async
+/// callbacks. The monitor owns higher-level protocol framing; this type only
+/// guarantees byte transport and lifecycle notifications.
 final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable {
     private let executableURL: URL
     private let arguments: [String]
@@ -44,6 +50,8 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
         onStderrLine: @escaping @Sendable (String) async -> Void,
         onTermination: @escaping @Sendable (Int32) async -> Void
     ) async throws {
+        // Multiple callers may race to reconnect; once a process exists we keep
+        // the original pipes alive and treat later `start` calls as no-ops.
         guard process == nil else { return }
 
         let process = Process()
@@ -58,6 +66,9 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
         process.standardError = stderrPipe
         process.terminationHandler = { terminatedProcess in
             Task {
+                // Termination is reported independently from stdout/stderr EOF.
+                // Callers should expect the last buffered lines to arrive before
+                // or after this callback depending on OS scheduling.
                 await onTermination(terminatedProcess.terminationStatus)
             }
         }
@@ -86,6 +97,8 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
     }
 
     func stop() async {
+        // Cancel readers first so no more callbacks race with teardown while
+        // stdin/process are being closed underneath them.
         stdoutSource?.cancel()
         stderrSource?.cancel()
         stdoutSource = nil
@@ -132,6 +145,8 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
     }
 
     private func configureNoSIGPIPE(for handle: FileHandle) {
+        // Broken pipes should be reported as write failures, not crash the app
+        // when the remote/local app-server exits before stdin is flushed.
         _ = fcntl(handle.fileDescriptor, F_SETNOSIGPIPE, 1)
     }
 
@@ -156,6 +171,9 @@ final class ProcessStdioTransport: RemoteAppServerTransport, @unchecked Sendable
     ) {
         let data = handle.availableData
         guard !data.isEmpty else {
+            // EOF can arrive without a trailing newline. Flush the residual
+            // bytes once so stderr diagnostics or the final JSON line are not
+            // silently dropped on clean shutdown.
             flushResidualBuffer(&buffer, forward: forward)
             return
         }
@@ -196,6 +214,8 @@ final class SSHStdioTransport: RemoteAppServerTransport, @unchecked Sendable {
     private let transport: ProcessStdioTransport
 
     nonisolated init(host: RemoteHostConfig) {
+        // `-T` disables tty allocation so the remote app-server speaks raw
+        // stdio/JSONL without shell prompt or line-editing interference.
         self.transport = ProcessStdioTransport(
             executableURL: URL(fileURLWithPath: "/usr/bin/ssh"),
             arguments: [
@@ -234,6 +254,8 @@ final class LocalCodexAppServerTransport: RemoteAppServerTransport, @unchecked S
     private let transport: ProcessStdioTransport
 
     nonisolated init() {
+        // Local mode reuses the same transport contract so higher layers can
+        // switch between local and SSH sessions without protocol branches.
         self.transport = ProcessStdioTransport(
             executableURL: URL(fileURLWithPath: "/usr/bin/env"),
             arguments: [
