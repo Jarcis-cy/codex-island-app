@@ -9,44 +9,6 @@
 
 import AppKit
 
-private enum NotchMouseButton: Hashable {
-    case left
-    case right
-}
-
-struct NotchMousePassThroughState {
-    private var capturedButtons: Set<NotchMouseButton> = []
-
-    mutating func shouldPassThrough(eventType: NSEvent.EventType, hasHitTarget: Bool) -> Bool {
-        switch eventType {
-        case .leftMouseDown:
-            if hasHitTarget {
-                capturedButtons.insert(.left)
-                return false
-            }
-            return true
-
-        case .leftMouseUp:
-            let captured = capturedButtons.remove(.left) != nil
-            return !captured && !hasHitTarget
-
-        case .rightMouseDown:
-            if hasHitTarget {
-                capturedButtons.insert(.right)
-                return false
-            }
-            return true
-
-        case .rightMouseUp:
-            let captured = capturedButtons.remove(.right) != nil
-            return !captured && !hasHitTarget
-
-        default:
-            return false
-        }
-    }
-}
-
 // Use NSPanel subclass for non-activating behavior
 class NotchPanel: NSPanel {
     private var mousePassThroughState = NotchMousePassThroughState()

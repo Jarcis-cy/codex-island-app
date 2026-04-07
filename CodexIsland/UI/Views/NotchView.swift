@@ -419,30 +419,14 @@ struct NotchView: View {
 
     private func handlePendingSessionsChange(_ sessions: [SessionState]) {
         let currentIds = Set(sessions.map { $0.stableId })
-        let combinedIds = currentIds.union(remoteSessionMonitor.threads.filter(\.needsAttention).map(\.stableId))
-        let newPendingIds = currentIds.subtracting(previousPendingIds)
-
-        if !newPendingIds.isEmpty &&
-            viewModel.status == .closed &&
-            !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
-            viewModel.notchOpen(reason: .notification)
-        }
-
-        previousPendingIds = combinedIds
+        let remoteIds = Set(remoteSessionMonitor.threads.filter(\.needsAttention).map(\.stableId))
+        updatePendingAttention(currentIds: currentIds, otherIds: remoteIds)
     }
 
     private func handleRemotePendingChange(_ threads: [RemoteThreadState]) {
         let currentIds = Set(threads.filter(\.needsAttention).map(\.stableId))
-        let combinedIds = currentIds.union(sessionMonitor.pendingInstances.map(\.stableId))
-        let newPendingIds = currentIds.subtracting(previousPendingIds)
-
-        if !newPendingIds.isEmpty &&
-            viewModel.status == .closed &&
-            !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace() {
-            viewModel.notchOpen(reason: .notification)
-        }
-
-        previousPendingIds = combinedIds
+        let localIds = Set(sessionMonitor.pendingInstances.map(\.stableId))
+        updatePendingAttention(currentIds: currentIds, otherIds: localIds)
     }
 
     private func handleWaitingForInputChange(_ instances: [SessionState]) {
@@ -451,9 +435,7 @@ struct NotchView: View {
         let newWaitingIds = currentIds.subtracting(previousWaitingForInputIds)
 
         if !newWaitingIds.isEmpty {
-            if viewModel.status == .closed {
-                viewModel.notchOpen(reason: .notification)
-            }
+            openForWaitingIfNeeded()
 
             let newlyWaitingSessions = waitingForInputSessions.filter { newWaitingIds.contains($0.stableId) }
 
@@ -467,13 +449,7 @@ struct NotchView: View {
                     }
                 }
             }
-
-            DispatchQueue.main.async {
-                isBouncing = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    isBouncing = false
-                }
-            }
+            triggerBounce()
         }
 
         previousWaitingForInputIds = currentIds.union(
@@ -489,16 +465,8 @@ struct NotchView: View {
         let newWaitingIds = currentIds.subtracting(previousWaitingForInputIds)
 
         if !newWaitingIds.isEmpty {
-            if viewModel.status == .closed {
-                viewModel.notchOpen(reason: .notification)
-            }
-
-            DispatchQueue.main.async {
-                isBouncing = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                    isBouncing = false
-                }
-            }
+            openForWaitingIfNeeded()
+            triggerBounce()
         }
 
         previousWaitingForInputIds = currentIds.union(
@@ -524,5 +492,32 @@ struct NotchView: View {
         }
 
         return false
+    }
+
+    private func updatePendingAttention(currentIds: Set<String>, otherIds: Set<String>) {
+        let newPendingIds = currentIds.subtracting(previousPendingIds)
+        if !newPendingIds.isEmpty && shouldAutoOpenForAttention {
+            viewModel.notchOpen(reason: .notification)
+        }
+        previousPendingIds = currentIds.union(otherIds)
+    }
+
+    private var shouldAutoOpenForAttention: Bool {
+        viewModel.status == .closed && !TerminalVisibilityDetector.isTerminalVisibleOnCurrentSpace()
+    }
+
+    private func openForWaitingIfNeeded() {
+        if viewModel.status == .closed {
+            viewModel.notchOpen(reason: .notification)
+        }
+    }
+
+    private func triggerBounce() {
+        DispatchQueue.main.async {
+            isBouncing = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                isBouncing = false
+            }
+        }
     }
 }

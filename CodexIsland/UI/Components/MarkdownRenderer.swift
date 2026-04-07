@@ -21,6 +21,12 @@ enum MarkdownListItemRenderer {
     }
 }
 
+private struct MarkdownListMarker {
+    let text: String
+    let width: CGFloat
+    let alignment: Alignment
+}
+
 // MARK: - Document Cache
 
 /// Caches parsed markdown documents to avoid re-parsing
@@ -37,19 +43,18 @@ private final class DocumentCache: @unchecked Sendable {
         if let cached = cache[text] {
             return cached
         }
-        // Enable strikethrough and other extended syntax
-        let doc = Document(parsing: text, options: [.parseBlockDirectives, .parseSymbolLinks])
+
+        let document = Document(parsing: text, options: [.parseBlockDirectives, .parseSymbolLinks])
         if cache.count >= maxSize {
             cache.removeAll()
         }
-        cache[text] = doc
-        return doc
+        cache[text] = document
+        return document
     }
 }
 
 // MARK: - Markdown Text View
 
-/// Renders markdown text with inline formatting using swift-markdown
 struct MarkdownText: View {
     let text: String
     let baseColor: Color
@@ -67,7 +72,6 @@ struct MarkdownText: View {
     var body: some View {
         let children = Array(document.children)
         if children.isEmpty {
-            // Fallback for empty parse result
             SwiftUI.Text(text)
                 .foregroundColor(baseColor)
                 .font(.system(size: fontSize))
@@ -95,7 +99,7 @@ private struct BlockRenderer: View {
     @ViewBuilder
     private var content: some View {
         if let paragraph = markup as? Paragraph {
-            InlineRenderer(children: Array(paragraph.inlineChildren), baseColor: baseColor, fontSize: fontSize)
+            inlineRenderer(for: paragraph.inlineChildren)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
         } else if let heading = markup as? Heading {
@@ -104,10 +108,14 @@ private struct BlockRenderer: View {
             CodeBlockView(code: codeBlock.code)
         } else if let blockQuote = markup as? BlockQuote {
             blockQuoteView(blockQuote)
-        } else if let list = markup as? UnorderedList {
-            unorderedListView(list)
-        } else if let list = markup as? OrderedList {
-            orderedListView(list)
+        } else if let unorderedList = markup as? UnorderedList {
+            listView(for: Array(unorderedList.listItems)) { _ in
+                MarkdownListMarker(text: "•", width: 12, alignment: .center)
+            }
+        } else if let orderedList = markup as? OrderedList {
+            listView(for: Array(orderedList.listItems)) { index in
+                MarkdownListMarker(text: "\(index + 1).", width: 20, alignment: .trailing)
+            }
         } else if markup is ThematicBreak {
             Divider()
                 .background(baseColor.opacity(0.3))
@@ -119,11 +127,14 @@ private struct BlockRenderer: View {
 
     @ViewBuilder
     private func headingView(_ heading: Heading) -> some View {
-        let text = InlineRenderer(children: Array(heading.inlineChildren), baseColor: baseColor, fontSize: fontSize).asText()
+        let text = inlineRenderer(for: heading.inlineChildren).asText()
         switch heading.level {
-        case 1: text.bold().italic().underline()
-        case 2: text.bold()
-        default: text.bold().foregroundColor(baseColor.opacity(0.7))
+        case 1:
+            text.bold().italic().underline()
+        case 2:
+            text.bold()
+        default:
+            text.bold().foregroundColor(baseColor.opacity(0.7))
         }
     }
 
@@ -136,38 +147,49 @@ private struct BlockRenderer: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(blockQuote.children.enumerated()), id: \.offset) { _, child in
-                    if let para = child as? Paragraph {
-                        InlineRenderer(children: Array(para.inlineChildren), baseColor: baseColor.opacity(0.7), fontSize: fontSize)
-                            .asText()
-                            .italic()
-                    }
+                    childView(child, color: baseColor.opacity(0.7), italicParagraphs: true)
                 }
             }
         }
         .padding(.vertical, 2)
     }
 
-    @ViewBuilder
-    private func unorderedListView(_ list: UnorderedList) -> some View {
-        let items = list.listItems.compactMap { item -> [Markup]? in
+    private func inlineRenderer<S: Sequence>(
+        for children: S,
+        color: Color? = nil
+    ) -> InlineRenderer where S.Element == InlineMarkup {
+        InlineRenderer(
+            children: Array(children),
+            baseColor: color ?? baseColor,
+            fontSize: fontSize
+        )
+    }
+
+    private func renderableChildren(from listItems: [ListItem]) -> [[Markup]] {
+        listItems.compactMap { item in
             let children = MarkdownListItemRenderer.renderableChildren(for: item)
             return children.isEmpty ? nil : children
         }
+    }
+
+    @ViewBuilder
+    private func listView(
+        for listItems: [ListItem],
+        marker: @escaping (Int) -> MarkdownListMarker
+    ) -> some View {
+        let items = renderableChildren(from: listItems)
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(items.enumerated()), id: \.offset) { _, itemChildren in
+            ForEach(Array(items.enumerated()), id: \.offset) { index, itemChildren in
+                let listMarker = marker(index)
                 HStack(alignment: .top, spacing: 6) {
-                    SwiftUI.Text("•")
+                    SwiftUI.Text(listMarker.text)
                         .font(.system(size: fontSize))
                         .foregroundColor(baseColor.opacity(0.6))
-                        .frame(width: 12, alignment: .center)
+                        .frame(width: listMarker.width, alignment: listMarker.alignment)
 
                     VStack(alignment: .leading, spacing: 4) {
                         ForEach(Array(itemChildren.enumerated()), id: \.offset) { _, child in
-                            if let para = child as? Paragraph {
-                                InlineRenderer(children: Array(para.inlineChildren), baseColor: baseColor, fontSize: fontSize)
-                            } else {
-                                BlockRenderer(markup: child, baseColor: baseColor, fontSize: fontSize)
-                            }
+                            childView(child)
                         }
                     }
                 }
@@ -176,30 +198,20 @@ private struct BlockRenderer: View {
     }
 
     @ViewBuilder
-    private func orderedListView(_ list: OrderedList) -> some View {
-        let items = list.listItems.compactMap { item -> [Markup]? in
-            let children = MarkdownListItemRenderer.renderableChildren(for: item)
-            return children.isEmpty ? nil : children
-        }
-        VStack(alignment: .leading, spacing: 4) {
-            ForEach(Array(items.enumerated()), id: \.offset) { index, itemChildren in
-                HStack(alignment: .top, spacing: 6) {
-                    SwiftUI.Text("\(index + 1).")
-                        .font(.system(size: fontSize))
-                        .foregroundColor(baseColor.opacity(0.6))
-                        .frame(width: 20, alignment: .trailing)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(Array(itemChildren.enumerated()), id: \.offset) { _, child in
-                            if let para = child as? Paragraph {
-                                InlineRenderer(children: Array(para.inlineChildren), baseColor: baseColor, fontSize: fontSize)
-                            } else {
-                                BlockRenderer(markup: child, baseColor: baseColor, fontSize: fontSize)
-                            }
-                        }
-                    }
-                }
+    private func childView(
+        _ child: Markup,
+        color: Color? = nil,
+        italicParagraphs: Bool = false
+    ) -> some View {
+        if let paragraph = child as? Paragraph {
+            let renderer = inlineRenderer(for: paragraph.inlineChildren, color: color)
+            if italicParagraphs {
+                renderer.asText().italic()
+            } else {
+                renderer
             }
+        } else {
+            BlockRenderer(markup: child, baseColor: color ?? baseColor, fontSize: fontSize)
         }
     }
 }
@@ -216,55 +228,40 @@ private struct InlineRenderer: View {
     }
 
     func asText() -> SwiftUI.Text {
-        var result = SwiftUI.Text("")
-        for child in children {
-            result = result + renderInline(child)
+        children.reduce(SwiftUI.Text("")) { partialResult, child in
+            partialResult + renderInline(child)
         }
-        return result
     }
 
     private func renderInline(_ inline: InlineMarkup) -> SwiftUI.Text {
         if let text = inline as? Markdown.Text {
-            return SwiftUI.Text(text.string).foregroundColor(baseColor)
+            return styledText(text.string)
         } else if let strong = inline as? Strong {
-            let plainText = strong.plainText
-            return SwiftUI.Text(plainText)
+            return styledText(strong.plainText)
                 .fontWeight(.bold)
-                .foregroundColor(baseColor)
         } else if let emphasis = inline as? Emphasis {
-            let plainText = emphasis.plainText
-            return SwiftUI.Text(plainText)
+            return styledText(emphasis.plainText)
                 .italic()
-                .foregroundColor(baseColor)
         } else if let code = inline as? InlineCode {
-            return SwiftUI.Text(code.code)
+            return styledText(code.code)
                 .font(.system(size: fontSize, design: .monospaced))
-                .foregroundColor(baseColor)
         } else if let link = inline as? Markdown.Link {
-            let plainText = link.plainText
-            return SwiftUI.Text(plainText)
-                .foregroundColor(Color.blue)
+            return styledText(link.plainText, color: .blue)
                 .underline()
         } else if let strike = inline as? Strikethrough {
-            let plainText = strike.plainText
-            return SwiftUI.Text(plainText)
+            return styledText(strike.plainText)
                 .strikethrough()
-                .foregroundColor(baseColor)
         } else if inline is SoftBreak {
             return SwiftUI.Text(" ")
         } else if inline is LineBreak {
             return SwiftUI.Text("\n")
         } else {
-            return SwiftUI.Text(inline.plainText).foregroundColor(baseColor)
+            return styledText(inline.plainText)
         }
     }
 
-    private func renderChildren(_ children: [InlineMarkup]) -> SwiftUI.Text {
-        var result = SwiftUI.Text("")
-        for child in children {
-            result = result + renderInline(child)
-        }
-        return result
+    private func styledText(_ text: String, color: Color? = nil) -> SwiftUI.Text {
+        SwiftUI.Text(text).foregroundColor(color ?? baseColor)
     }
 }
 
@@ -276,12 +273,19 @@ private struct CodeBlockView: View {
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             SwiftUI.Text(code)
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.white.opacity(0.85))
-                .padding(10)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.white.opacity(0.92))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.08))
-        .cornerRadius(6)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+        )
     }
 }
