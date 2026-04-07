@@ -73,6 +73,52 @@ final class ChatHistoryManagerTests: XCTestCase {
                 sessionId: session.sessionId
             )
         )
+        XCTAssertNil(
+            ChatHistoryManager.shared.loadFailure(
+                logicalSessionId: session.logicalSessionId,
+                sessionId: session.sessionId
+            )
+        )
+    }
+
+    func testMissingTranscriptRecordsLoadFailure() async throws {
+        let missingTranscriptPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("jsonl")
+            .path
+
+        await SessionStore.shared.process(.hookReceived(
+            makeHookEvent(
+                sessionId: "session-missing",
+                tty: "/dev/ttys001",
+                transcriptPath: missingTranscriptPath
+            )
+        ))
+        await Task.yield()
+
+        guard let session = await SessionStore.shared.allSessions().first else {
+            return XCTFail("Expected session")
+        }
+
+        await ChatHistoryManager.shared.loadFromFile(
+            logicalSessionId: session.logicalSessionId,
+            sessionId: session.sessionId,
+            cwd: session.cwd
+        )
+
+        XCTAssertFalse(
+            ChatHistoryManager.shared.isLoaded(
+                logicalSessionId: session.logicalSessionId,
+                sessionId: session.sessionId
+            )
+        )
+        XCTAssertEqual(
+            ChatHistoryManager.shared.loadFailure(
+                logicalSessionId: session.logicalSessionId,
+                sessionId: session.sessionId
+            ),
+            "Transcript file is missing."
+        )
     }
 
     func testReboundLogicalSessionRequiresReloadForLatestSessionId() async throws {

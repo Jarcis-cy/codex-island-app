@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os.log
 
 nonisolated enum TerminalInputStep: Equatable, Sendable {
     case text(String)
@@ -16,6 +17,7 @@ nonisolated enum TerminalInputStep: Equatable, Sendable {
 
 actor NativeTerminalInputSender {
     static let shared = NativeTerminalInputSender()
+    nonisolated private static let logger = Logger(subsystem: "com.codexisland", category: "NativeTerminalInputSender")
 
     private init() {}
 
@@ -88,7 +90,10 @@ actor NativeTerminalInputSender {
                 success = await ToolApprovalHandler.shared.sendKey("Escape", to: target)
             }
 
-            guard success else { return false }
+            guard success else {
+                Self.logger.error("Failed to send terminal input step to tmux target \(target.targetString, privacy: .public)")
+                return false
+            }
             try? await Task.sleep(for: .milliseconds(40))
         }
 
@@ -135,7 +140,11 @@ actor NativeTerminalInputSender {
                 """
             }
 
-            guard await run(script: script) == "ok" else { return false }
+            let output = await run(script: script)
+            guard output == "ok" else {
+                Self.logger.error("Ghostty input step failed with response \(output ?? "nil", privacy: .public)")
+                return false
+            }
             try? await Task.sleep(for: .milliseconds(40))
         }
 
@@ -179,7 +188,11 @@ actor NativeTerminalInputSender {
             return "miss"
             """
 
-            guard await run(script: script) == "ok" else { return false }
+            let output = await run(script: script)
+            guard output == "ok" else {
+                Self.logger.error("iTerm input step failed with response \(output ?? "nil", privacy: .public)")
+                return false
+            }
             try? await Task.sleep(for: .milliseconds(40))
         }
 
@@ -210,7 +223,12 @@ actor NativeTerminalInputSender {
         return "ok"
         """
 
-        return await run(script: script) == "ok"
+        let output = await run(script: script)
+        guard output == "ok" else {
+            Self.logger.error("System Events keystroke fallback failed with response \(output ?? "nil", privacy: .public)")
+            return false
+        }
+        return true
     }
 
     private func ghosttyTargetSpecifier(session: SessionState) -> String? {
@@ -221,10 +239,14 @@ actor NativeTerminalInputSender {
     }
 
     private func run(script: String) async -> String? {
-        guard let output = await ProcessExecutor.shared.runOrNil("/usr/bin/osascript", arguments: ["-e", script]) else {
+        let result = await ProcessExecutor.shared.runWithResult("/usr/bin/osascript", arguments: ["-e", script])
+        switch result {
+        case .success(let processResult):
+            return processResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .failure(let error):
+            Self.logger.error("osascript terminal input failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private nonisolated func appleScriptEscaped(_ value: String) -> String {

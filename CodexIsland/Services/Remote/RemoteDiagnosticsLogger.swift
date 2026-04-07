@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os.log
 
 /// Minimal sink interface so remote monitoring code can log diagnostics without
 /// depending on the concrete file-backed actor.
@@ -88,6 +89,11 @@ nonisolated struct RemoteDiagnosticsRecord: Codable, Sendable {
 /// remote session pipeline, so any filesystem/encoding failure is dropped.
 actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
     static let shared = RemoteDiagnosticsLogger()
+    nonisolated private static let logger = Logger(subsystem: "com.codexisland", category: "RemoteDiagnosticsLogger")
+
+    nonisolated private static func defaultFailureReporter(_ message: String) {
+        logger.error("\(message, privacy: .public)")
+    }
 
     private let fileManager: FileManager
     private let encoder: JSONEncoder
@@ -96,13 +102,15 @@ actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
     private let maxFileSizeBytes: Int
     private let maxRotatedFiles: Int
     private let isEnabled: @Sendable () -> Bool
+    private let reportFailure: @Sendable (String) -> Void
 
     init(
         fileManager: FileManager = .default,
         directoryURL: URL? = nil,
         maxFileSizeBytes: Int = 10 * 1024 * 1024,
         maxRotatedFiles: Int = 5,
-        isEnabled: @escaping @Sendable () -> Bool = { AppSettings.remoteDiagnosticsLoggingEnabled }
+        isEnabled: @escaping @Sendable () -> Bool = { AppSettings.remoteDiagnosticsLoggingEnabled },
+        reportFailure: @escaping @Sendable (String) -> Void = RemoteDiagnosticsLogger.defaultFailureReporter
     ) {
         self.fileManager = fileManager
         self.encoder = JSONEncoder()
@@ -113,6 +121,7 @@ actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
         self.maxFileSizeBytes = maxFileSizeBytes
         self.maxRotatedFiles = max(1, maxRotatedFiles)
         self.isEnabled = isEnabled
+        self.reportFailure = reportFailure
     }
 
     func log(_ record: RemoteDiagnosticsRecord) async {
@@ -132,7 +141,7 @@ actor RemoteDiagnosticsLogger: RemoteDiagnosticsLogging {
             try handle.write(contentsOf: data)
             try handle.write(contentsOf: Data([0x0A]))
         } catch {
-            return
+            reportFailure("Failed to persist remote diagnostics: \(error.localizedDescription)")
         }
     }
 

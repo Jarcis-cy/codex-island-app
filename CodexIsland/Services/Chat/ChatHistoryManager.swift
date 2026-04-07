@@ -5,6 +5,7 @@
 
 import Combine
 import Foundation
+import os.log
 
 @MainActor
 class ChatHistoryManager: ObservableObject {
@@ -14,9 +15,11 @@ class ChatHistoryManager: ObservableObject {
     }
 
     static let shared = ChatHistoryManager()
+    nonisolated private static let logger = Logger(subsystem: "com.codexisland", category: "ChatHistoryManager")
 
     @Published private(set) var histories: [String: [ChatHistoryItem]] = [:]
     @Published private(set) var agentDescriptions: [String: [String: String]] = [:]
+    @Published private(set) var loadFailures: [String: String] = [:]
 
     private var loadedSessions: [String: String] = [:]
     private var loadingSessions: Set<LoadingSource> = []
@@ -41,6 +44,11 @@ class ChatHistoryManager: ObservableObject {
         loadedSessions[logicalSessionId] == sessionId
     }
 
+    func loadFailure(logicalSessionId: String, sessionId: String) -> String? {
+        guard loadedSessions[logicalSessionId] != sessionId else { return nil }
+        return loadFailures[logicalSessionId]
+    }
+
     func syncVisibleSessions(_ sessions: [SessionState], resolvedSessionIds: Set<String> = []) {
         applySessionSnapshot(sessions, resolvedSessionIds: resolvedSessionIds)
     }
@@ -52,14 +60,41 @@ class ChatHistoryManager: ObservableObject {
 
         loadingSessions.insert(source)
         defer { loadingSessions.remove(source) }
+        loadFailures.removeValue(forKey: logicalSessionId)
 
         await SessionStore.shared.process(.loadHistory(sessionId: sessionId, cwd: cwd))
-        guard let session = await SessionStore.shared.session(for: sessionId) else { return }
+        guard let session = await SessionStore.shared.session(for: sessionId) else {
+            recordLoadFailure(
+                logicalSessionId: logicalSessionId,
+                message: "Session is unavailable while loading history."
+            )
+            return
+        }
+
+        if let transcriptPath = session.transcriptPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !transcriptPath.isEmpty {
+            guard FileManager.default.fileExists(atPath: transcriptPath) else {
+                recordLoadFailure(
+                    logicalSessionId: logicalSessionId,
+                    message: "Transcript file is missing."
+                )
+                return
+            }
+            guard FileManager.default.isReadableFile(atPath: transcriptPath) else {
+                recordLoadFailure(
+                    logicalSessionId: logicalSessionId,
+                    message: "Transcript file is not readable."
+                )
+                return
+            }
+        }
+
         let filteredItems = filterOutSubagentTools(session.chatItems)
         histories[logicalSessionId] = filteredItems
         agentDescriptions[logicalSessionId] = session.subagentState.agentDescriptions
         guard session.transcriptPath != nil || !session.chatItems.isEmpty else { return }
         loadedSessions[logicalSessionId] = sessionId
+        loadFailures.removeValue(forKey: logicalSessionId)
     }
 
     func syncFromFile(sessionId: String, cwd: String) async {
@@ -119,19 +154,25 @@ class ChatHistoryManager: ObservableObject {
         let activeLogicalIds = Set(sessions.map(\.logicalSessionId))
         loadedSessions = loadedSessions.filter { activeLogicalIds.contains($0.key) }
         loadingSessions = loadingSessions.filter { activeLogicalIds.contains($0.logicalSessionId) }
+        loadFailures = loadFailures.filter { activeLogicalIds.contains($0.key) }
 
         for session in sessions {
             let filteredItems = filterOutSubagentTools(session.chatItems)
             newHistories[session.logicalSessionId] = filteredItems
             newAgentDescriptions[session.logicalSessionId] = session.subagentState.agentDescriptions
             if !filteredItems.isEmpty ||
-                session.transcriptPath != nil ||
                 resolvedSessionIds.contains(session.sessionId) {
                 loadedSessions[session.logicalSessionId] = session.sessionId
+                loadFailures.removeValue(forKey: session.logicalSessionId)
             }
         }
         histories = newHistories
         agentDescriptions = newAgentDescriptions
+    }
+
+    private func recordLoadFailure(logicalSessionId: String, message: String) {
+        loadFailures[logicalSessionId] = message
+        Self.logger.error("Failed to load chat history for \(logicalSessionId, privacy: .public): \(message, privacy: .public)")
     }
 
     private func filterOutSubagentTools(_ items: [ChatHistoryItem]) -> [ChatHistoryItem] {

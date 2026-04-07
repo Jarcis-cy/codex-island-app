@@ -1138,6 +1138,16 @@ struct ChatView: View {
         )
 
         history = ChatHistoryManager.shared.history(for: logicalSessionId)
+        if let loadFailure = ChatHistoryManager.shared.loadFailure(
+            logicalSessionId: logicalSessionId,
+            sessionId: session.sessionId
+        ) {
+            sendFailureMessage = loadFailure
+            withAnimation(.easeOut(duration: 0.2)) {
+                isLoading = false
+            }
+            return
+        }
         let hasResolvedInitialState =
             ChatHistoryManager.shared.isLoaded(logicalSessionId: logicalSessionId, sessionId: session.sessionId) ||
             !history.isEmpty ||
