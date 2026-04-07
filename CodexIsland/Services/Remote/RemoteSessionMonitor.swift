@@ -483,7 +483,22 @@ final class RemoteSessionMonitor: ObservableObject {
         let expectedDefaultCwd = host.defaultCwd
         hostThreadFilterTasks[hostId] = Task { [weak self] in
             guard let self else { return }
-            let resolvedFilter = try? await connection.resolveDisplayCwdFilter(expectedDefaultCwd)
+            let resolvedFilter: String?
+            do {
+                resolvedFilter = try await connection.resolveDisplayCwdFilter(expectedDefaultCwd)
+            } catch {
+                let presentableError = await MainActor.run {
+                    self.presentableRemoteError(error, hostId: hostId)
+                }
+                await self.logMonitorEvent(
+                    level: .warning,
+                    hostId: hostId,
+                    method: "thread/list",
+                    message: "Failed to resolve remote thread filter",
+                    payload: presentableError.localizedDescription
+                )
+                return
+            }
             guard !Task.isCancelled else { return }
 
             await MainActor.run {
@@ -570,13 +585,14 @@ final class RemoteSessionMonitor: ObservableObject {
                 try await connection.refreshThreads()
                 self.hostActionErrors.removeValue(forKey: id)
             } catch {
-                self.hostActionErrors[id] = error.localizedDescription
+                let presentableError = self.presentableRemoteError(error, hostId: id)
+                self.hostActionErrors[id] = presentableError.localizedDescription
                 await self.logMonitorEvent(
                     level: .warning,
                     hostId: id,
                     method: "thread/list",
                     message: "Manual refresh failed",
-                    payload: error.localizedDescription
+                    payload: presentableError.localizedDescription
                 )
             }
         }
@@ -584,8 +600,21 @@ final class RemoteSessionMonitor: ObservableObject {
 
     func refreshHostNow(id: String) async throws {
         guard let connection = connections[id] else { throw connectionAvailabilityError(hostId: id) }
-        try await connection.refreshThreads()
-        hostActionErrors.removeValue(forKey: id)
+        do {
+            try await connection.refreshThreads()
+            hostActionErrors.removeValue(forKey: id)
+        } catch {
+            let presentableError = presentableRemoteError(error, hostId: id)
+            hostActionErrors[id] = presentableError.localizedDescription
+            await logMonitorEvent(
+                level: .warning,
+                hostId: id,
+                method: "thread/list",
+                message: "Foreground refresh failed",
+                payload: presentableError.localizedDescription
+            )
+            throw presentableError
+        }
     }
 
     func listModels(hostId: String, includeHidden: Bool = false) async throws -> [RemoteAppServerModel] {
@@ -777,9 +806,13 @@ final class RemoteSessionMonitor: ObservableObject {
                 threadId: thread.id,
                 message: "Started remote thread"
             )
-            Task {
-                try? await connection.refreshThreads()
-            }
+            scheduleFollowUpRefresh(
+                hostId: hostId,
+                connection: connection,
+                reason: "thread/start",
+                threadId: thread.id,
+                surfaceErrorToUser: true
+            )
             guard let state = threadState(hostId: hostId, threadId: thread.id) else {
                 throw RemoteSessionError.missingThread
             }
@@ -788,7 +821,18 @@ final class RemoteSessionMonitor: ObservableObject {
             let presentableError = presentableRemoteError(error, hostId: hostId)
             markStateChanged()
             if case .timeout = (error as? RemoteSessionError) {
-                try? await connection.refreshThreads()
+                do {
+                    try await connection.refreshThreads()
+                } catch {
+                    let refreshError = presentableRemoteError(error, hostId: hostId)
+                    await logMonitorEvent(
+                        level: .warning,
+                        hostId: hostId,
+                        method: "thread/list",
+                        message: "Failed timeout recovery refresh after thread start",
+                        payload: refreshError.localizedDescription
+                    )
+                }
                 if let recovered = recoverNewThread(
                     hostId: hostId,
                     excluding: existingThreadIds,
@@ -887,6 +931,13 @@ final class RemoteSessionMonitor: ObservableObject {
                     payload: "phase=\(state.phase.description) canSend=\(state.canSendMessage) historyTail=[\(recentHistory)]"
                 )
             }
+            scheduleFollowUpRefresh(
+                hostId: hostId,
+                connection: connection,
+                reason: "thread/resume",
+                threadId: thread.id,
+                surfaceErrorToUser: true
+            )
             return state
         } catch {
             let presentableError = presentableRemoteError(error, hostId: hostId)
@@ -2176,6 +2227,37 @@ final class RemoteSessionMonitor: ObservableObject {
                 payload: payload
             )
         )
+    }
+
+    private func scheduleFollowUpRefresh(
+        hostId: String,
+        connection: any RemoteAppServerConnectionProtocol,
+        reason: String,
+        threadId: String? = nil,
+        surfaceErrorToUser: Bool
+    ) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                try await connection.refreshThreads()
+                if surfaceErrorToUser {
+                    self.hostActionErrors.removeValue(forKey: hostId)
+                }
+            } catch {
+                let presentableError = self.presentableRemoteError(error, hostId: hostId)
+                if surfaceErrorToUser {
+                    self.hostActionErrors[hostId] = presentableError.localizedDescription
+                }
+                await self.logMonitorEvent(
+                    level: .warning,
+                    hostId: hostId,
+                    method: "thread/list",
+                    threadId: threadId,
+                    message: "Follow-up remote refresh failed",
+                    payload: "\(reason): \(presentableError.localizedDescription)"
+                )
+            }
+        }
     }
 
     private func historyItems(from turns: [RemoteAppServerTurn]) -> [ChatHistoryItem] {

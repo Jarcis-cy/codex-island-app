@@ -813,6 +813,77 @@ final class RemoteSessionMonitorTests: XCTestCase {
         XCTAssertEqual(opened.phase, .waitingForInput)
     }
 
+    func testRefreshHostNowSurfacesPresentableConnectionFailure() async {
+        let harness = makeRemoteMonitorHarness()
+        harness.connection.refreshThreadsHandler = {
+            throw RemoteSessionError.notConnected
+        }
+        harness.start()
+        harness.applyFailed("SSH exited with code 255")
+
+        do {
+            try await harness.monitor.refreshHostNow(id: harness.host.id)
+            XCTFail("Expected refreshHostNow to fail")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "SSH exited with code 255")
+        }
+
+        XCTAssertEqual(harness.monitor.hostActionErrors[harness.host.id], "SSH exited with code 255")
+    }
+
+    func testOpenThreadLogsAndSurfacesFollowUpRefreshFailure() async throws {
+        let harness = makeRemoteMonitorHarness()
+        let resumedThread = makeThread(id: "thread-existing", preview: "Existing", cwd: "/repo")
+
+        harness.connection.resumeThreadHandler = { _, _ in
+            makeThreadResumeResponse(thread: resumedThread)
+        }
+        harness.connection.refreshThreadsHandler = {
+            throw RemoteSessionError.transport("refresh boom")
+        }
+
+        harness.start()
+
+        let opened = try await harness.monitor.openThread(hostId: harness.host.id, threadId: "thread-existing")
+        XCTAssertEqual(opened.threadId, "thread-existing")
+
+        try await waitUntil {
+            let records = await harness.logger.records
+            return records.contains {
+                $0.message == "Follow-up remote refresh failed" &&
+                    $0.payload?.contains("thread/resume: refresh boom") == true
+            }
+        }
+
+        XCTAssertEqual(harness.monitor.hostActionErrors[harness.host.id], "refresh boom")
+    }
+
+    func testStartThreadTimeoutLogsFailedRecoveryRefresh() async {
+        let harness = makeRemoteMonitorHarness()
+
+        harness.connection.startThreadHandler = { _ in
+            throw RemoteSessionError.timeout("Timed out waiting for app-server response to thread/start")
+        }
+        harness.connection.refreshThreadsHandler = {
+            throw RemoteSessionError.transport("recovery refresh boom")
+        }
+
+        harness.start()
+
+        do {
+            _ = try await harness.monitor.startThread(hostId: harness.host.id)
+            XCTFail("Expected startThread to fail")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "Timed out waiting for app-server response to thread/start")
+        }
+
+        let records = await harness.logger.records
+        XCTAssertTrue(records.contains {
+            $0.message == "Failed timeout recovery refresh after thread start" &&
+                $0.payload == "recovery refresh boom"
+        })
+    }
+
     func testThreadListAppliesTranscriptFallbackWhenAppServerSnapshotIsIdle() async throws {
         let logger = TestDiagnosticsLogger()
         let connection = FakeRemoteConnection()
