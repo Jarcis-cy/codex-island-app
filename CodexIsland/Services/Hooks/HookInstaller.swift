@@ -11,6 +11,8 @@ import os.log
 struct HookInstaller {
     private static let logger = Logger(subsystem: "com.codexisland", category: "Hooks")
     private static let scriptName = "codex-island-state.py"
+    // Keep pruning legacy managed names so older installs can be cleaned up without touching any
+    // unrelated hooks the user may still maintain manually.
     private static let legacyScriptNames = ["claude-island-state.py"]
     private static let supportedHookEvents = [
         "SessionStart",
@@ -95,6 +97,8 @@ struct HookInstaller {
         fileManager: FileManager = .default
     ) throws {
         let paths = makePaths(homeDirectory: homeDirectory)
+        // Installation modifies user-owned files under ~/.codex. Snapshot the script plus both
+        // config files first so a failed partial install can restore the previous state verbatim.
         let snapshots = try captureSnapshots(for: [paths.pythonScript, paths.hooksConfig, paths.configToml], fileManager: fileManager)
         let hooksDirExists = fileManager.fileExists(atPath: paths.hooksDir.path)
 
@@ -159,6 +163,8 @@ struct HookInstaller {
         let hookGroup: [[String: Any]] = [["hooks": [hookEntry]]]
 
         var hooks = json["hooks"] as? [String: Any] ?? [:]
+        // Treat this installer as owning only its managed command entries. Everything else in
+        // hooks.json stays in place so user-defined hooks and third-party integrations survive.
         pruneManagedHooks(from: &hooks)
 
         for event in supportedHookEvents {
@@ -217,6 +223,8 @@ struct HookInstaller {
     }
 
     private static func updatedConfigContentEnablingCodexHooks(_ content: String) -> String {
+        // config.toml may already contain a [features] section with comments or neighboring keys.
+        // Only flip/add `codex_hooks = true`; do not rewrite the rest of the user's config.
         let normalizedContent = content.isEmpty || content.hasSuffix("\n") ? content : "\(content)\n"
 
         guard let featuresRange = normalizedContent.range(of: #"(?m)^\[features\]\s*$"#, options: .regularExpression) else {
@@ -297,6 +305,8 @@ struct HookInstaller {
         fileManager: FileManager = .default
     ) throws {
         let paths = makePaths(homeDirectory: homeDirectory)
+        // Uninstall follows the same transaction model as install: remove only managed artifacts
+        // and restore the previous snapshot if hooks.json cannot be decoded or rewritten safely.
         let snapshots = try captureSnapshots(for: paths.managedScripts + [paths.hooksConfig], fileManager: fileManager)
 
         do {
@@ -428,6 +438,8 @@ struct HookInstaller {
     }
 
     private static func pruneManagedHooks(from hooks: inout [String: Any]) {
+        // hooks.json groups commands by event, so pruning must walk every event and drop only
+        // entries that point at our managed script names.
         for (event, value) in hooks {
             guard let entries = value as? [[String: Any]] else { continue }
 
@@ -446,6 +458,8 @@ struct HookInstaller {
                 return entry
             }
 
+            // Preserve the container entry when at least one non-managed hook remains; otherwise
+            // remove the whole group to avoid leaving empty `hooks = []` shells behind.
             let retainedHooks = entryHooks.filter { hook in
                 let command = hook["command"] as? String ?? ""
                 return !isManagedCommand(command)
