@@ -53,13 +53,19 @@ final class CodexTranscriptWatcher {
 
         newSource.setEventHandler { [weak self] in
             guard let self else { return }
+            let event = newSource.data
+            if event.contains(.delete) || event.contains(.rename) {
+                codexTranscriptLogger.warning("Transcript watcher lost file for \(self.sessionId.prefix(8), privacy: .public): \(self.transcriptPath, privacy: .public)")
+                self.stopInternal()
+                return
+            }
             DispatchQueue.main.async {
                 self.delegate?.didUpdateCodexTranscript(sessionId: self.sessionId)
             }
         }
 
         newSource.setCancelHandler { [weak self] in
-            try? self?.fileHandle?.close()
+            self?.closeFileHandle()
             self?.fileHandle = nil
         }
 
@@ -80,6 +86,15 @@ final class CodexTranscriptWatcher {
         }
         source?.cancel()
         source = nil
+    }
+
+    private func closeFileHandle() {
+        guard let fileHandle else { return }
+        do {
+            try fileHandle.close()
+        } catch {
+            codexTranscriptLogger.error("Failed to close transcript watcher for \(self.sessionId.prefix(8), privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     deinit {

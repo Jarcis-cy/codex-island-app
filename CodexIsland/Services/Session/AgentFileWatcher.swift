@@ -69,6 +69,7 @@ class AgentFileWatcher {
             lastOffset = try handle.seekToEnd()
         } catch {
             logger.error("Failed to seek to end: \(error.localizedDescription, privacy: .public)")
+            stopInternal()
             return
         }
 
@@ -84,7 +85,7 @@ class AgentFileWatcher {
         }
 
         newSource.setCancelHandler { [weak self] in
-            try? self?.fileHandle?.close()
+            self?.closeFileHandle()
             self?.fileHandle = nil
         }
 
@@ -95,6 +96,12 @@ class AgentFileWatcher {
     }
 
     private func parseTools() {
+        guard FileManager.default.fileExists(atPath: filePath) else {
+            logger.warning("Agent file disappeared while watching: \(self.filePath, privacy: .public)")
+            stopInternal()
+            return
+        }
+
         let tools = ConversationParser.parseSubagentToolsSync(agentId: agentId, cwd: cwd)
 
         let newTools = tools.filter { !seenToolIds.contains($0.id) }
@@ -126,6 +133,15 @@ class AgentFileWatcher {
         }
         source?.cancel()
         source = nil
+    }
+
+    private func closeFileHandle() {
+        guard let fileHandle else { return }
+        do {
+            try fileHandle.close()
+        } catch {
+            logger.error("Failed to close agent file watcher for \(self.agentId.prefix(8), privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     deinit {

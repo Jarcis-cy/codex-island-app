@@ -66,6 +66,7 @@ class JSONLInterruptWatcher {
             lastOffset = try handle.seekToEnd()
         } catch {
             logger.error("Failed to seek to end: \(error.localizedDescription, privacy: .public)")
+            stopInternal()
             return
         }
 
@@ -81,7 +82,7 @@ class JSONLInterruptWatcher {
         }
 
         newSource.setCancelHandler { [weak self] in
-            try? self?.fileHandle?.close()
+            self?.closeFileHandle(context: "interrupt watcher cancel")
             self?.fileHandle = nil
         }
 
@@ -98,6 +99,8 @@ class JSONLInterruptWatcher {
         do {
             currentSize = try handle.seekToEnd()
         } catch {
+            logger.error("Failed to inspect interrupt watcher file size for \(self.sessionId.prefix(8), privacy: .public): \(error.localizedDescription, privacy: .public)")
+            stopInternal()
             return
         }
 
@@ -106,11 +109,26 @@ class JSONLInterruptWatcher {
         do {
             try handle.seek(toOffset: lastOffset)
         } catch {
+            logger.error("Failed to seek interrupt watcher for \(self.sessionId.prefix(8), privacy: .public): \(error.localizedDescription, privacy: .public)")
+            stopInternal()
             return
         }
 
-        guard let newData = try? handle.readToEnd(),
-              let newContent = String(data: newData, encoding: .utf8) else {
+        let newData: Data
+        do {
+            guard let data = try handle.readToEnd() else {
+                logger.warning("Interrupt watcher reached EOF without new data for \(self.sessionId.prefix(8), privacy: .public)")
+                return
+            }
+            newData = data
+        } catch {
+            logger.error("Failed to read interrupt watcher data for \(self.sessionId.prefix(8), privacy: .public): \(error.localizedDescription, privacy: .public)")
+            stopInternal()
+            return
+        }
+
+        guard let newContent = String(data: newData, encoding: .utf8) else {
+            logger.warning("Interrupt watcher received non-UTF8 data for \(self.sessionId.prefix(8), privacy: .public)")
             return
         }
 
@@ -166,6 +184,15 @@ class JSONLInterruptWatcher {
         source?.cancel()
         source = nil
         // fileHandle closed by cancel handler
+    }
+
+    private func closeFileHandle(context: StaticString) {
+        guard let fileHandle else { return }
+        do {
+            try fileHandle.close()
+        } catch {
+            logger.error("Failed to close \(context, privacy: .public) for \(self.sessionId.prefix(8), privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     deinit {

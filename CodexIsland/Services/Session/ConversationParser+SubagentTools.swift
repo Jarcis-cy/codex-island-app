@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import os.log
 
 extension ConversationParser {
     func parseSubagentTools(agentId: String, cwd: String) -> [SubagentToolInfo] {
@@ -22,7 +23,12 @@ extension ConversationParser {
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
         let agentFile = NSHomeDirectory() + "/.claude/projects/" + projectDir + "/agent-" + agentId + ".jsonl"
         guard FileManager.default.fileExists(atPath: agentFile) else { return nil }
-        return try? String(contentsOfFile: agentFile, encoding: .utf8)
+        do {
+            return try String(contentsOfFile: agentFile, encoding: .utf8)
+        } catch {
+            ConversationParser.logger.warning("Failed to load agent transcript \(agentFile, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     private nonisolated static func parseSubagentToolContent(_ content: String) -> [SubagentToolInfo] {
@@ -77,7 +83,12 @@ extension ConversationParser {
 
     private nonisolated static func parseAgentJSONLine(_ line: String) -> [String: Any]? {
         guard let lineData = line.data(using: .utf8) else { return nil }
-        return try? JSONSerialization.jsonObject(with: lineData) as? [String: Any]
+        do {
+            return try JSONSerialization.jsonObject(with: lineData) as? [String: Any]
+        } catch {
+            ConversationParser.logger.warning("Failed to parse agent JSONL line: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     private nonisolated static func parseToolInput(_ inputDict: [String: Any]?) -> [String: String] {

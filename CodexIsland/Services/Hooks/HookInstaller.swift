@@ -28,8 +28,13 @@ struct HookInstaller {
         case removeExistingScriptFailed(URL, Error)
         case copyScriptFailed(URL, Error)
         case setPermissionsFailed(URL, Error)
+        case snapshotReadFailed(URL, Error)
+        case snapshotMetadataFailed(URL, Error)
+        case restoreSnapshotFailed(URL, Error)
+        case listDirectoryFailed(URL, Error)
         case readHooksConfigFailed(URL, Error)
         case decodeHooksConfigFailed(URL)
+        case encodeHooksConfigFailed(URL, Error)
         case writeHooksConfigFailed(URL, Error)
         case readConfigFailed(URL, Error)
         case writeConfigFailed(URL, Error)
@@ -47,10 +52,20 @@ struct HookInstaller {
                 return "Failed to install hook script to \(url.path): \(error.localizedDescription)"
             case .setPermissionsFailed(let url, let error):
                 return "Failed to set hook script permissions at \(url.path): \(error.localizedDescription)"
+            case .snapshotReadFailed(let url, let error):
+                return "Failed to snapshot \(url.path): \(error.localizedDescription)"
+            case .snapshotMetadataFailed(let url, let error):
+                return "Failed to read metadata for \(url.path): \(error.localizedDescription)"
+            case .restoreSnapshotFailed(let url, let error):
+                return "Failed to restore \(url.path): \(error.localizedDescription)"
+            case .listDirectoryFailed(let url, let error):
+                return "Failed to inspect directory \(url.path): \(error.localizedDescription)"
             case .readHooksConfigFailed(let url, let error):
                 return "Failed to read hooks config at \(url.path): \(error.localizedDescription)"
             case .decodeHooksConfigFailed(let url):
                 return "Hooks config at \(url.path) is not valid JSON."
+            case .encodeHooksConfigFailed(let url, let error):
+                return "Failed to encode hooks config for \(url.path): \(error.localizedDescription)"
             case .writeHooksConfigFailed(let url, let error):
                 return "Failed to write hooks config at \(url.path): \(error.localizedDescription)"
             case .readConfigFailed(let url, let error):
@@ -125,7 +140,7 @@ struct HookInstaller {
                 throw HookInstallerError.setPermissionsFailed(paths.pythonScript, error)
             }
 
-            try updateHooks(at: paths.hooksConfig)
+            try updateHooks(at: paths.hooksConfig, fileManager: fileManager)
             try enableCodexHooksFeature(at: paths.configToml)
         } catch {
             do {
@@ -141,21 +156,8 @@ struct HookInstaller {
         }
     }
 
-    private static func updateHooks(at hooksURL: URL) throws {
-        var json: [String: Any] = [:]
-        if FileManager.default.fileExists(atPath: hooksURL.path) {
-            let data: Data
-            do {
-                data = try Data(contentsOf: hooksURL)
-            } catch {
-                throw HookInstallerError.readHooksConfigFailed(hooksURL, error)
-            }
-
-            guard let existing = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-                throw HookInstallerError.decodeHooksConfigFailed(hooksURL)
-            }
-            json = existing
-        }
+    private static func updateHooks(at hooksURL: URL, fileManager: FileManager) throws {
+        var json = try readHooksJSON(at: hooksURL, fileManager: fileManager) ?? [:]
 
         let python = detectPython()
         let command = "\(python) ~/.codex/hooks/\(scriptName)"
@@ -175,16 +177,7 @@ struct HookInstaller {
 
         json["hooks"] = hooks
 
-        let data = try JSONSerialization.data(
-            withJSONObject: json,
-            options: [.prettyPrinted, .sortedKeys]
-        )
-
-        do {
-            try data.write(to: hooksURL)
-        } catch {
-            throw HookInstallerError.writeHooksConfigFailed(hooksURL, error)
-        }
+        try writeHooksJSON(json, to: hooksURL)
     }
 
     private static func enableCodexHooksFeature(at configURL: URL) throws {
@@ -271,10 +264,18 @@ struct HookInstaller {
         let codexDir = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex")
         let hooksConfig = codexDir.appendingPathComponent("hooks.json")
+        let json: [String: Any]
+        do {
+            guard let existing = try readHooksJSON(at: hooksConfig, fileManager: .default) else {
+                return false
+            }
+            json = existing
+        } catch {
+            logger.warning("Failed to inspect hook installation state: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
 
-        guard let data = try? Data(contentsOf: hooksConfig),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let hooks = json["hooks"] as? [String: Any] else {
+        guard let hooks = json["hooks"] as? [String: Any] else {
             return false
         }
 
@@ -322,14 +323,7 @@ struct HookInstaller {
                 return
             }
 
-            let data: Data
-            do {
-                data = try Data(contentsOf: paths.hooksConfig)
-            } catch {
-                throw HookInstallerError.readHooksConfigFailed(paths.hooksConfig, error)
-            }
-
-            guard var json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+            guard var json = try readHooksJSON(at: paths.hooksConfig, fileManager: fileManager),
                   var hooks = json["hooks"] as? [String: Any] else {
                 throw HookInstallerError.decodeHooksConfigFailed(paths.hooksConfig)
             }
@@ -342,16 +336,7 @@ struct HookInstaller {
                 json["hooks"] = hooks
             }
 
-            let encoded = try JSONSerialization.data(
-                withJSONObject: json,
-                options: [.prettyPrinted, .sortedKeys]
-            )
-
-            do {
-                try encoded.write(to: paths.hooksConfig)
-            } catch {
-                throw HookInstallerError.writeHooksConfigFailed(paths.hooksConfig, error)
-            }
+            try writeHooksJSON(json, to: paths.hooksConfig)
         } catch {
             do {
                 try restoreSnapshots(snapshots, fileManager: fileManager)
@@ -385,23 +370,45 @@ struct HookInstaller {
     private static func captureSnapshots(for urls: [URL], fileManager: FileManager) throws -> [FileSnapshot] {
         try urls.map { url in
             let existed = fileManager.fileExists(atPath: url.path)
-            let data = existed ? try Data(contentsOf: url) : nil
-            let permissions = existed ? try fileManager.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber : nil
+            let data: Data?
+            let permissions: NSNumber?
+
+            if existed {
+                do {
+                    data = try Data(contentsOf: url)
+                } catch {
+                    throw HookInstallerError.snapshotReadFailed(url, error)
+                }
+
+                do {
+                    permissions = try fileManager.attributesOfItem(atPath: url.path)[.posixPermissions] as? NSNumber
+                } catch {
+                    throw HookInstallerError.snapshotMetadataFailed(url, error)
+                }
+            } else {
+                data = nil
+                permissions = nil
+            }
+
             return FileSnapshot(url: url, existed: existed, data: data, permissions: permissions)
         }
     }
 
     private static func restoreSnapshots(_ snapshots: [FileSnapshot], fileManager: FileManager) throws {
         for snapshot in snapshots {
-            if snapshot.existed {
-                let parentDirectory = snapshot.url.deletingLastPathComponent()
-                try fileManager.createDirectory(at: parentDirectory, withIntermediateDirectories: true)
-                try snapshot.data?.write(to: snapshot.url)
-                if let permissions = snapshot.permissions {
-                    try fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: snapshot.url.path)
+            do {
+                if snapshot.existed {
+                    let parentDirectory = snapshot.url.deletingLastPathComponent()
+                    try fileManager.createDirectory(at: parentDirectory, withIntermediateDirectories: true)
+                    try snapshot.data?.write(to: snapshot.url)
+                    if let permissions = snapshot.permissions {
+                        try fileManager.setAttributes([.posixPermissions: permissions], ofItemAtPath: snapshot.url.path)
+                    }
+                } else if fileManager.fileExists(atPath: snapshot.url.path) {
+                    try fileManager.removeItem(at: snapshot.url)
                 }
-            } else if fileManager.fileExists(atPath: snapshot.url.path) {
-                try fileManager.removeItem(at: snapshot.url)
+            } catch {
+                throw HookInstallerError.restoreSnapshotFailed(snapshot.url, error)
             }
         }
     }
@@ -411,12 +418,61 @@ struct HookInstaller {
             return
         }
 
-        let contents = try fileManager.contentsOfDirectory(atPath: directory.path)
+        let contents: [String]
+        do {
+            contents = try fileManager.contentsOfDirectory(atPath: directory.path)
+        } catch {
+            throw HookInstallerError.listDirectoryFailed(directory, error)
+        }
         guard contents.isEmpty else {
             return
         }
 
         try fileManager.removeItem(at: directory)
+    }
+
+    private static func readHooksJSON(at hooksURL: URL, fileManager: FileManager) throws -> [String: Any]? {
+        guard fileManager.fileExists(atPath: hooksURL.path) else {
+            return nil
+        }
+
+        let data: Data
+        do {
+            data = try Data(contentsOf: hooksURL)
+        } catch {
+            throw HookInstallerError.readHooksConfigFailed(hooksURL, error)
+        }
+
+        let object: Any
+        do {
+            object = try JSONSerialization.jsonObject(with: data)
+        } catch {
+            throw HookInstallerError.decodeHooksConfigFailed(hooksURL)
+        }
+
+        guard let json = object as? [String: Any] else {
+            throw HookInstallerError.decodeHooksConfigFailed(hooksURL)
+        }
+
+        return json
+    }
+
+    private static func writeHooksJSON(_ json: [String: Any], to hooksURL: URL) throws {
+        let data: Data
+        do {
+            data = try JSONSerialization.data(
+                withJSONObject: json,
+                options: [.prettyPrinted, .sortedKeys]
+            )
+        } catch {
+            throw HookInstallerError.encodeHooksConfigFailed(hooksURL, error)
+        }
+
+        do {
+            try data.write(to: hooksURL)
+        } catch {
+            throw HookInstallerError.writeHooksConfigFailed(hooksURL, error)
+        }
     }
 
     private static func detectPython() -> String {

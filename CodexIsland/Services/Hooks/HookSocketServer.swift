@@ -174,6 +174,7 @@ enum HookSocketIOError: Error, Equatable {
     case invalidPayload(String)
     case readFailed(Int32)
     case writeFailed(Int32)
+    case responseEncodeFailed(String)
 }
 
 enum HookSocketIO {
@@ -194,6 +195,7 @@ enum HookSocketIO {
         var buffer = [UInt8](repeating: 0, count: bufferSize)
         let deadline = Date().addingTimeInterval(timeout)
         var didReachEOF = false
+        var lastDecodeFailure: String?
 
         while Date() < deadline {
             var pollFd = pollfd(fd: clientSocket, events: Int16(POLLIN | POLLHUP | POLLERR), revents: 0)
@@ -208,7 +210,7 @@ enum HookSocketIO {
             }
 
             if pollResult == 0 {
-                if let event = tryDecodeEvent(from: allData) {
+                if let event = decodeEventIfComplete(from: allData, failureMessage: &lastDecodeFailure) {
                     return event
                 }
                 continue
@@ -224,7 +226,7 @@ enum HookSocketIO {
 
                     if bytesRead > 0 {
                         allData.append(contentsOf: buffer[0 ..< bytesRead])
-                        if let event = tryDecodeEvent(from: allData) {
+                        if let event = decodeEventIfComplete(from: allData, failureMessage: &lastDecodeFailure) {
                             return event
                         }
                         continue
@@ -260,11 +262,11 @@ enum HookSocketIO {
             throw HookSocketIOError.noData
         }
 
-        if let event = tryDecodeEvent(from: allData) {
+        if let event = decodeEventIfComplete(from: allData, failureMessage: &lastDecodeFailure) {
             return event
         }
 
-        let preview = payloadPreview(for: allData)
+        let preview = payloadPreview(for: allData, detail: lastDecodeFailure)
         if didReachEOF {
             throw HookSocketIOError.invalidPayload(preview)
         }
@@ -318,11 +320,16 @@ enum HookSocketIO {
         }
     }
 
-    private static func tryDecodeEvent(from data: Data) -> HookEvent? {
+    private static func decodeEventIfComplete(from data: Data, failureMessage: inout String?) -> HookEvent? {
         guard !data.isEmpty else {
             return nil
         }
-        return try? JSONDecoder().decode(HookEvent.self, from: data)
+        do {
+            return try JSONDecoder().decode(HookEvent.self, from: data)
+        } catch {
+            failureMessage = error.localizedDescription
+            return nil
+        }
     }
 
     private static func waitUntilWritable(socket: Int32, deadline: Date, poller: Poller) throws {
@@ -354,13 +361,20 @@ enum HookSocketIO {
         throw HookSocketIOError.timedOut("Timed out waiting for socket to become writable")
     }
 
-    private static func payloadPreview(for data: Data) -> String {
+    private static func payloadPreview(for data: Data, detail: String?) -> String {
         let prefix = data.prefix(512)
         let text = String(decoding: prefix, as: UTF8.self)
+        let preview: String
         if data.count > prefix.count {
-            return "\(text)…"
+            preview = "\(text)…"
+        } else {
+            preview = text
         }
-        return text
+
+        guard let detail, !detail.isEmpty else {
+            return preview
+        }
+        return "\(preview) [decode error: \(detail)]"
     }
 
     private nonisolated static func defaultWriter(fd: Int32, buffer: UnsafeRawPointer, count: Int) -> Int {
@@ -564,10 +578,14 @@ class HookSocketServer {
     /// Generate cache key from event properties
     private func cacheKey(sessionId: String, toolName: String?, toolInput: [String: AnyCodable]?) -> String {
         let inputStr: String
-        if let input = toolInput,
-           let data = try? Self.sortedEncoder.encode(input),
-           let str = String(data: data, encoding: .utf8) {
-            inputStr = str
+        if let input = toolInput {
+            do {
+                let data = try Self.sortedEncoder.encode(input)
+                inputStr = String(data: data, encoding: .utf8) ?? "{}"
+            } catch {
+                logger.warning("Failed to encode tool input for cache key: \(error.localizedDescription, privacy: .public)")
+                inputStr = "{}"
+            }
         } else {
             inputStr = "{}"
         }
@@ -745,8 +763,16 @@ class HookSocketServer {
         permissionsLock.unlock()
 
         let response = HookResponse(decision: decision, reason: reason)
-        guard let data = try? JSONEncoder().encode(response) else {
-            logger.error("Failed to encode permission response for toolUseId: \(toolUseId.prefix(12), privacy: .public)")
+        let data: Data
+        do {
+            data = try encodeResponse(response)
+        } catch HookSocketIOError.responseEncodeFailed(let message) {
+            logger.error("Failed to encode permission response for toolUseId \(toolUseId.prefix(12), privacy: .public): \(message, privacy: .public)")
+            close(pending.clientSocket)
+            permissionFailureHandler?(pending.sessionId, toolUseId)
+            return
+        } catch {
+            logger.error("Unexpected permission response encoding failure: \(error.localizedDescription, privacy: .public)")
             close(pending.clientSocket)
             permissionFailureHandler?(pending.sessionId, toolUseId)
             return
@@ -791,8 +817,16 @@ class HookSocketServer {
         permissionsLock.unlock()
 
         let response = HookResponse(decision: decision, reason: reason)
-        guard let data = try? JSONEncoder().encode(response) else {
-            logger.error("Failed to encode permission response for session: \(sessionId.prefix(8), privacy: .public)")
+        let data: Data
+        do {
+            data = try encodeResponse(response)
+        } catch HookSocketIOError.responseEncodeFailed(let message) {
+            logger.error("Failed to encode permission response for session \(sessionId.prefix(8), privacy: .public): \(message, privacy: .public)")
+            close(pending.clientSocket)
+            permissionFailureHandler?(sessionId, pending.toolUseId)
+            return
+        } catch {
+            logger.error("Unexpected permission response encoding failure: \(error.localizedDescription, privacy: .public)")
             close(pending.clientSocket)
             permissionFailureHandler?(sessionId, pending.toolUseId)
             return
@@ -818,6 +852,14 @@ class HookSocketServer {
 
         if !writeSuccess {
             permissionFailureHandler?(sessionId, pending.toolUseId)
+        }
+    }
+
+    private func encodeResponse(_ response: HookResponse) throws -> Data {
+        do {
+            return try JSONEncoder().encode(response)
+        } catch {
+            throw HookSocketIOError.responseEncodeFailed(error.localizedDescription)
         }
     }
 }
