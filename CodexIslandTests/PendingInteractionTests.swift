@@ -533,6 +533,35 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testLocalSendMessageFallsBackToTerminalWhenAppServerThreadIsUnavailable() async throws {
+        let terminalSentText = LockedBox<String?>(nil)
+        let harness = makeLocalAppServerHarness(
+            canSendTerminalInput: { _ in true },
+            sendTerminalInput: { text, _ in
+                await terminalSentText.set(text)
+                return true
+            }
+        )
+
+        harness.connection.refreshThreadsHandler = {
+            throw RemoteSessionError.transport("app-server handshake failed")
+        }
+        harness.connection.resumeThreadHandler = { _, _ in
+            throw RemoteSessionError.transport("thread resume failed")
+        }
+
+        harness.localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        let result = await harness.sessionMonitor.sendMessageResult(sessionId: "session-1", text: "fallback to terminal")
+        let capturedText = await terminalSentText.get()
+
+        XCTAssertEqual(result, .sent)
+        XCTAssertEqual(capturedText, "fallback to terminal")
+    }
+
+    @MainActor
     func testLocalListModelsUsesAppServerConnection() async throws {
         let harness = makeLocalAppServerHarness()
         let includeHiddenFlag = LockedBox<Bool?>(nil)
@@ -1160,6 +1189,24 @@ final class PendingInteractionTests: XCTestCase {
 
     @MainActor
     private func makeLocalAppServerHarness() -> LocalAppServerHarness {
+        makeLocalAppServerHarness(
+            canSendTerminalInput: { session in
+                NativeTerminalInputSender.shared.canSend(to: session)
+            },
+            sendTerminalInput: { text, session in
+                await NativeTerminalInputSender.shared.send(
+                    steps: [.text(text), .enter],
+                    to: session
+                )
+            }
+        )
+    }
+
+    @MainActor
+    private func makeLocalAppServerHarness(
+        canSendTerminalInput: @escaping @Sendable (SessionState) -> Bool,
+        sendTerminalInput: @escaping @Sendable (String, SessionState) async -> Bool
+    ) -> LocalAppServerHarness {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(
             id: "local-app-server",
@@ -1180,7 +1227,11 @@ final class PendingInteractionTests: XCTestCase {
         )
         TestObjectRetainer.retain(localMonitor)
 
-        let sessionMonitor = CodexSessionMonitor(localAppServerMonitor: localMonitor)
+        let sessionMonitor = CodexSessionMonitor(
+            localAppServerMonitor: localMonitor,
+            canSendTerminalInput: canSendTerminalInput,
+            sendTerminalInput: sendTerminalInput
+        )
         TestObjectRetainer.retain(sessionMonitor)
 
         return LocalAppServerHarness(

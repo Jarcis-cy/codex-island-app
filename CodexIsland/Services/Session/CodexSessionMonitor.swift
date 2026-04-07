@@ -33,12 +33,27 @@ class CodexSessionMonitor: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var codexLivenessTask: Task<Void, Never>?
     private let localAppServerMonitor: RemoteSessionMonitor
+    private let canSendTerminalInput: @Sendable (SessionState) -> Bool
+    private let sendTerminalInput: @Sendable (String, SessionState) async -> Bool
     private var latestStoreSessions: [SessionState] = []
     private var pendingLocalThreadLoads: Set<String> = []
     private var dismissedSyntheticSessionIds: Set<String> = []
 
-    init(localAppServerMonitor: RemoteSessionMonitor? = nil) {
+    init(
+        localAppServerMonitor: RemoteSessionMonitor? = nil,
+        canSendTerminalInput: @escaping @Sendable (SessionState) -> Bool = { session in
+            NativeTerminalInputSender.shared.canSend(to: session)
+        },
+        sendTerminalInput: @escaping @Sendable (String, SessionState) async -> Bool = { text, session in
+            await NativeTerminalInputSender.shared.send(
+                steps: [.text(text), .enter],
+                to: session
+            )
+        }
+    ) {
         self.localAppServerMonitor = localAppServerMonitor ?? Self.makeLocalAppServerMonitor()
+        self.canSendTerminalInput = canSendTerminalInput
+        self.sendTerminalInput = sendTerminalInput
 
         SessionStore.shared.sessionsPublisher
             .receive(on: DispatchQueue.main)
@@ -216,6 +231,10 @@ class CodexSessionMonitor: ObservableObject {
             }
         case .codexLocal:
             guard let text = inlineReplyText(for: answers) else { return false }
+            if localThread(for: session) == nil,
+               canFallbackToTerminalInput(for: session) {
+                return await sendTerminalInput(text, session)
+            }
             guard let thread = await ensureAppServerThread(for: session) else { return false }
             do {
                 try await localAppServerMonitor.sendMessage(thread: thread, text: text)
@@ -247,7 +266,7 @@ class CodexSessionMonitor: ObservableObject {
             return thread.canSendMessage
         }
 
-        return false
+        return canFallbackToTerminalInput(for: session)
     }
 
     func canRespondInline(to session: SessionState, interaction: PendingInteraction) -> Bool {
@@ -259,7 +278,7 @@ class CodexSessionMonitor: ObservableObject {
         case .remoteAppServer:
             return true
         case .codexLocal:
-            return canSendMessage(to: session)
+            return localThread(for: session)?.canSendMessage == true || canFallbackToTerminalInput(for: session)
         case .hookPermission:
             return false
         }
@@ -493,6 +512,13 @@ class CodexSessionMonitor: ObservableObject {
     func sendMessageResult(sessionId: String, text: String) async -> LocalSendResult {
         if let session = await SessionStore.shared.session(for: sessionId) {
             if session.provider == .codex {
+                if localThread(for: session) == nil,
+                   canFallbackToTerminalInput(for: session) {
+                    return await sendTerminalInput(text, session)
+                        ? .sent
+                        : .failed("Terminal input fallback failed.")
+                }
+
                 switch await ensureAppServerThreadResult(for: session) {
                 case .ready(let thread):
                     do {
@@ -684,6 +710,14 @@ class CodexSessionMonitor: ObservableObject {
 
         guard let value else { return nil }
         return value.replacingOccurrences(of: " (Recommended)", with: "")
+    }
+
+    private func canFallbackToTerminalInput(for session: SessionState) -> Bool {
+        guard session.provider == .codex else { return false }
+        guard session.phase == .idle || session.phase == .waitingForInput || session.primaryPendingInteraction != nil else {
+            return false
+        }
+        return canSendTerminalInput(session)
     }
 
     private func localMetadataSession(
@@ -956,14 +990,26 @@ class CodexSessionMonitor: ObservableObject {
         )
     }
 
+    func handleCodexProcessExit(for session: SessionState) async {
+        await ChatHistoryManager.shared.syncFromFile(sessionId: session.sessionId, cwd: session.cwd)
+
+        if let thread = findKnownAppServerThread(
+            for: session,
+            candidateThreadIDs: appServerCandidateThreadIDs(for: session)
+        ) {
+            dismissedSyntheticSessionIds.insert(thread.threadId)
+        }
+
+        await SessionStore.shared.process(.codexProcessExited(sessionId: session.sessionId))
+    }
+
     private func monitorCodexProcessLiveness() async {
         while !Task.isCancelled {
             let sessions = await SessionStore.shared.allSessions()
-            for session in sessions where session.provider == .codex && (session.phase.isActive || session.needsAttention) {
+            for session in sessions where session.provider == .codex && session.pid != nil {
                 guard let pid = session.pid else { continue }
                 if !processExists(pid: pid) {
-                    await ChatHistoryManager.shared.syncFromFile(sessionId: session.sessionId, cwd: session.cwd)
-                    await SessionStore.shared.process(.codexProcessExited(sessionId: session.sessionId))
+                    await handleCodexProcessExit(for: session)
                 }
             }
 

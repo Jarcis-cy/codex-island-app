@@ -1061,13 +1061,8 @@ actor SessionStore {
     }
 
     private func processCodexProcessExited(sessionId: String) async {
-        guard var session = sessions[sessionId], session.provider == .codex else { return }
-
-        session.pendingInteractions.removeAll()
-        if session.phase != .ended {
-            session.phase = .idle
-        }
-        sessions[sessionId] = session
+        guard let session = sessions[sessionId], session.provider == .codex else { return }
+        removeSession(sessionId: sessionId)
     }
 
     // MARK: - Session End Processing

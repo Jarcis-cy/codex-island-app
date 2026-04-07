@@ -136,6 +136,17 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertNil(session?.terminalSurfaceId)
     }
 
+    func testCodexProcessExitedRemovesSession() async {
+        await SessionStore.shared.process(.hookReceived(
+            makeHookEvent(sessionId: "session-1", tty: "/dev/ttys001")
+        ))
+
+        await SessionStore.shared.process(.codexProcessExited(sessionId: "session-1"))
+        let sessions = await SessionStore.shared.allSessions()
+
+        XCTAssertTrue(sessions.isEmpty)
+    }
+
     private func makeHookEvent(
         sessionId: String,
         tty: String?,
