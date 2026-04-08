@@ -3,6 +3,20 @@ import XCTest
 @testable import Codex_Island
 
 final class RemoteAppServerTransportTests: XCTestCase {
+    func testLocalCodexAppServerTransportUsesLoginShellLaunchConfiguration() {
+        let config = LocalCodexAppServerTransport.localLaunchConfiguration(shellPath: "/bin/bash")
+
+        XCTAssertEqual(config.executableURL.path, "/bin/bash")
+        XCTAssertEqual(config.arguments, ["-lc", "exec codex app-server --listen stdio://"])
+    }
+
+    func testLocalCodexAppServerTransportFallsBackToZshWhenShellPathIsMissing() {
+        let config = LocalCodexAppServerTransport.localLaunchConfiguration(shellPath: "/missing/shell")
+
+        XCTAssertEqual(config.executableURL.path, "/bin/zsh")
+        XCTAssertEqual(config.arguments, ["-lc", "exec codex app-server --listen stdio://"])
+    }
+
     func testProcessTransportFlushesResidualStdoutAndStderrOnEOF() async throws {
         let recorder = LineRecorder()
         let terminated = expectation(description: "process terminated")

@@ -291,17 +291,39 @@ final class LocalCodexAppServerTransport: RemoteAppServerTransport, @unchecked S
     private let transport: ProcessStdioTransport
 
     nonisolated init() {
+        let launchConfiguration = Self.localLaunchConfiguration()
         // Local mode reuses the same transport contract so higher layers can
         // switch between local and SSH sessions without protocol branches.
         self.transport = ProcessStdioTransport(
-            executableURL: URL(fileURLWithPath: "/usr/bin/env"),
-            arguments: [
-                "codex",
-                "app-server",
-                "--listen",
-                "stdio://"
-            ],
+            executableURL: launchConfiguration.executableURL,
+            arguments: launchConfiguration.arguments,
             queueLabel: "com.codexisland.local-app-server-transport"
+        )
+    }
+
+    nonisolated static func localLaunchConfiguration(
+        shellPath: String? = Foundation.ProcessInfo.processInfo.environment["SHELL"]
+    ) -> (executableURL: URL, arguments: [String]) {
+        let fallbackShell = "/bin/zsh"
+        let candidateShell = shellPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedShell: String
+        if let candidateShell,
+           !candidateShell.isEmpty,
+           FileManager.default.isExecutableFile(atPath: candidateShell) {
+            resolvedShell = candidateShell
+        } else {
+            resolvedShell = fallbackShell
+        }
+
+        // GUI-launched apps often inherit a stripped PATH, so local app-server
+        // startup goes through a login shell to resolve the user's real `codex`
+        // binary location before `exec`-ing into stdio mode.
+        return (
+            executableURL: URL(fileURLWithPath: resolvedShell),
+            arguments: [
+                "-lc",
+                "exec codex app-server --listen stdio://"
+            ]
         )
     }
 

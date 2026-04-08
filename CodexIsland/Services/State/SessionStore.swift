@@ -168,6 +168,25 @@ actor SessionStore {
             return
         }
 
+        if event.provider == .codex, event.event == "UserPromptSubmit" {
+            let suppressedIds = session.pendingInteractions.compactMap { interaction -> String? in
+                if case .userInput = interaction {
+                    return interaction.id
+                }
+                return nil
+            }
+            session.suppressedPendingInteractionIDs.formUnion(suppressedIds)
+            session.pendingInteractions.removeAll { interaction in
+                if case .userInput = interaction {
+                    return true
+                }
+                return false
+            }
+            if session.phase.canTransition(to: .processing) {
+                session.phase = .processing
+            }
+        }
+
         if event.provider != .codex {
             let newPhase = event.determinePhase()
 
@@ -251,9 +270,9 @@ actor SessionStore {
         let isGhostty = isGhosttySession(terminalName: event.terminalName ?? session.terminalName, bundleId: session.terminalBundleId)
 
         if isGhostty {
-            session.terminalWindowId = event.terminalWindowId
-            session.terminalTabId = event.terminalTabId
-            session.terminalSurfaceId = event.terminalSurfaceId
+            session.terminalWindowId = event.terminalWindowId ?? session.terminalWindowId
+            session.terminalTabId = event.terminalTabId ?? session.terminalTabId
+            session.terminalSurfaceId = event.terminalSurfaceId ?? session.terminalSurfaceId
             return
         }
 

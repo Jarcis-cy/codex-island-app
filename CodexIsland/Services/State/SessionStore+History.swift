@@ -11,14 +11,19 @@ import os.log
 extension SessionStore {
     func processFileUpdate(_ payload: FileUpdatePayload) async {
         guard var session = sessions[payload.sessionId] else { return }
+        let filteredPendingResult = filteredPendingInteractions(
+            payload.pendingInteractions,
+            transcriptPhase: payload.transcriptPhase,
+            session: &session
+        )
 
         let conversationInfo = await SessionTranscriptParser.shared.parse(session: session)
         let runtimeInfo = await SessionTranscriptParser.shared.runtimeInfo(session: session)
         session.conversationInfo = conversationInfo
         session.runtimeInfo = runtimeInfo
-        session.pendingInteractions = payload.pendingInteractions
+        session.pendingInteractions = filteredPendingResult.pendingInteractions
         if session.provider == .codex,
-           let transcriptPhase = payload.transcriptPhase,
+           let transcriptPhase = filteredPendingResult.transcriptPhase,
            session.phase.canTransition(to: transcriptPhase) {
             session.phase = transcriptPhase
         }
@@ -225,11 +230,16 @@ extension SessionStore {
         runtimeInfo: SessionRuntimeInfo
     ) async {
         guard var session = sessions[sessionId] else { return }
+        let filteredPendingResult = filteredPendingInteractions(
+            pendingInteractions,
+            transcriptPhase: transcriptPhase,
+            session: &session
+        )
         session.conversationInfo = conversationInfo
         session.runtimeInfo = runtimeInfo
-        session.pendingInteractions = pendingInteractions
+        session.pendingInteractions = filteredPendingResult.pendingInteractions
         if session.provider == .codex,
-           let transcriptPhase,
+           let transcriptPhase = filteredPendingResult.transcriptPhase,
            session.phase.canTransition(to: transcriptPhase) {
             session.phase = transcriptPhase
         }
@@ -253,6 +263,32 @@ extension SessionStore {
         }
         session.chatItems.sort { $0.timestamp < $1.timestamp }
         sessions[sessionId] = session
+    }
+
+    private func filteredPendingInteractions(
+        _ pendingInteractions: [PendingInteraction],
+        transcriptPhase: SessionPhase?,
+        session: inout SessionState
+    ) -> (pendingInteractions: [PendingInteraction], transcriptPhase: SessionPhase?) {
+        guard session.provider == .codex,
+              !session.suppressedPendingInteractionIDs.isEmpty else {
+            return (pendingInteractions, transcriptPhase)
+        }
+
+        let filteredInteractions = pendingInteractions.filter { interaction in
+            !session.suppressedPendingInteractionIDs.contains(interaction.id)
+        }
+        let removedSuppressedInteraction = filteredInteractions.count != pendingInteractions.count
+
+        if transcriptPhase == .processing {
+            session.suppressedPendingInteractionIDs.removeAll()
+        }
+
+        if removedSuppressedInteraction {
+            return (filteredInteractions, .processing)
+        }
+
+        return (filteredInteractions, transcriptPhase)
     }
 
     private func reconcileClearedHistory(_ messages: [ChatMessage], session: inout SessionState) {

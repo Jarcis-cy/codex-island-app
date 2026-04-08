@@ -102,7 +102,7 @@ final class SessionStoreTests: XCTestCase {
         )
     }
 
-    func testGhosttyMissingContextClearsStaleSurfaceIdentifiers() async {
+    func testGhosttyMissingContextPreservesLastKnownSurfaceIdentifiers() async {
         await SessionStore.shared.process(.hookReceived(
             makeHookEvent(
                 sessionId: "session-1",
@@ -130,10 +130,10 @@ final class SessionStoreTests: XCTestCase {
 
         let session = await SessionStore.shared.allSessions().first
 
-        XCTAssertEqual(session?.logicalSessionId, "local|ghostty|tty|ttys001")
-        XCTAssertNil(session?.terminalWindowId)
-        XCTAssertNil(session?.terminalTabId)
-        XCTAssertNil(session?.terminalSurfaceId)
+        XCTAssertEqual(session?.logicalSessionId, "local|ghostty|surface|surface-1")
+        XCTAssertEqual(session?.terminalWindowId, "tab-group-1")
+        XCTAssertEqual(session?.terminalTabId, "tab-1")
+        XCTAssertEqual(session?.terminalSurfaceId, "surface-1")
     }
 
     func testCodexProcessExitedRemovesSession() async {

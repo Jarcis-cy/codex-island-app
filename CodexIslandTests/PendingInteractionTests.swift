@@ -265,6 +265,128 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
+    func testLocalUserPromptSubmitSuppressesStaleTranscriptFollowupUntilProcessingSync() async throws {
+        let harness = makeLocalAppServerHarness()
+
+        harness.localMonitor.startMonitoring()
+        await SessionStore.shared.process(.hookReceived(makeHookEvent(sessionId: "session-1")))
+        await Task.yield()
+
+        let initialInteraction = PendingInteraction.userInput(PendingUserInputInteraction(
+            id: "local-transcript-request",
+            title: "Codex needs your input",
+            questions: [
+                PendingInteractionQuestion(
+                    id: "next_step",
+                    header: "Next step",
+                    question: "Implement this plan?",
+                    options: [
+                        PendingInteractionOption(label: "Yes, implement this plan", description: nil),
+                        PendingInteractionOption(label: "No, stay in Plan mode", description: nil)
+                    ],
+                    isOther: false,
+                    isSecret: false
+                )
+            ],
+            transport: .codexLocal(callId: "local-transcript-request", turnId: "turn-1")
+        ))
+
+        await SessionStore.shared.process(.fileUpdated(FileUpdatePayload(
+            sessionId: "session-1",
+            cwd: "/tmp/project",
+            messages: [],
+            isIncremental: true,
+            completedToolIds: [],
+            toolResults: [:],
+            structuredResults: [:],
+            pendingInteractions: [initialInteraction],
+            transcriptPhase: .waitingForInput
+        )))
+
+        await SessionStore.shared.process(.hookReceived(HookEvent(
+            sessionId: "session-1",
+            provider: .codex,
+            cwd: "/tmp/project",
+            transcriptPath: nil,
+            event: "UserPromptSubmit",
+            status: "processing",
+            pid: 123,
+            tty: "/dev/ttys001",
+            terminalName: "ghostty",
+            terminalWindowId: "window-1",
+            terminalTabId: "tab-1",
+            terminalSurfaceId: "surface-1",
+            turnId: "turn-2",
+            tool: nil,
+            toolInput: nil,
+            toolUseId: nil,
+            notificationType: nil,
+            message: nil
+        )))
+
+        await SessionStore.shared.process(.fileUpdated(FileUpdatePayload(
+            sessionId: "session-1",
+            cwd: "/tmp/project",
+            messages: [],
+            isIncremental: true,
+            completedToolIds: [],
+            toolResults: [:],
+            structuredResults: [:],
+            pendingInteractions: [initialInteraction],
+            transcriptPhase: .waitingForInput
+        )))
+
+        let firstSnapshot = await SessionStore.shared.session(for: "session-1")
+        var session = try XCTUnwrap(firstSnapshot)
+        XCTAssertEqual(session.phase, .processing)
+        XCTAssertTrue(session.pendingInteractions.isEmpty)
+
+        await SessionStore.shared.process(.fileUpdated(FileUpdatePayload(
+            sessionId: "session-1",
+            cwd: "/tmp/project",
+            messages: [],
+            isIncremental: true,
+            completedToolIds: [],
+            toolResults: [:],
+            structuredResults: [:],
+            pendingInteractions: [],
+            transcriptPhase: .processing
+        )))
+
+        let nextInteraction = PendingInteraction.userInput(PendingUserInputInteraction(
+            id: "fresh-request",
+            title: "Codex needs your input",
+            questions: [
+                PendingInteractionQuestion(
+                    id: "scope",
+                    header: "Scope",
+                    question: "Choose one",
+                    options: [PendingInteractionOption(label: "One", description: nil)],
+                    isOther: false,
+                    isSecret: false
+                )
+            ],
+            transport: .codexLocal(callId: "fresh-request", turnId: "turn-3")
+        ))
+        await SessionStore.shared.process(.fileUpdated(FileUpdatePayload(
+            sessionId: "session-1",
+            cwd: "/tmp/project",
+            messages: [],
+            isIncremental: true,
+            completedToolIds: [],
+            toolResults: [:],
+            structuredResults: [:],
+            pendingInteractions: [nextInteraction],
+            transcriptPhase: .waitingForInput
+        )))
+
+        let secondSnapshot = await SessionStore.shared.session(for: "session-1")
+        session = try XCTUnwrap(secondSnapshot)
+        XCTAssertEqual(session.pendingInteractions.first?.id, "fresh-request")
+        XCTAssertEqual(session.phase, .waitingForInput)
+    }
+
+    @MainActor
     func testLocalTranscriptPendingInteractionUsesInlineFallbackWhenAppServerThreadHasNoInteraction() async throws {
         let harness = makeLocalAppServerHarness()
 

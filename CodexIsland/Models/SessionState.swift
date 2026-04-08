@@ -56,6 +56,10 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// Pending interactions that require user input or approval
     var pendingInteractions: [PendingInteraction]
+    /// Local Codex input submits can arrive before transcript `task_started`
+    /// lands, so stale transcript follow-ups are temporarily suppressed until
+    /// the next processing phase is observed.
+    var suppressedPendingInteractionIDs: Set<String>
 
     // MARK: - Conversation Info (from JSONL parsing)
 
@@ -102,6 +106,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         toolTracker: ToolTracker = ToolTracker(),
         subagentState: SubagentState = SubagentState(),
         pendingInteractions: [PendingInteraction] = [],
+        suppressedPendingInteractionIDs: Set<String> = [],
         conversationInfo: ConversationInfo = ConversationInfo(
             summary: nil, lastMessage: nil, lastMessageRole: nil,
             lastToolName: nil, firstUserMessage: nil, lastUserMessageDate: nil
@@ -133,6 +138,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.toolTracker = toolTracker
         self.subagentState = subagentState
         self.pendingInteractions = pendingInteractions
+        self.suppressedPendingInteractionIDs = suppressedPendingInteractionIDs
         self.conversationInfo = conversationInfo
         self.runtimeInfo = runtimeInfo
         self.needsClearReconciliation = needsClearReconciliation
