@@ -81,32 +81,11 @@ extension CodexSessionMonitor {
 
     func mergedVisibleSessions(from sessions: [SessionState]) -> [SessionState] {
         let localStoreSessions = sessions.filter { $0.provider == .codex }
-        let matchedStoreSessions = localStoreSessionByThreadId(from: localStoreSessions)
-        let localThreadSessions = localAppServerThreads.values
-            .filter { thread in
-                matchedStoreSessions[thread.threadId] != nil ||
-                    !dismissedSyntheticSessionIds.contains(thread.threadId)
-            }
-            .sorted { lhs, rhs in
-                if lhs.lastActivity != rhs.lastActivity {
-                    return lhs.lastActivity > rhs.lastActivity
-                }
-                return lhs.threadId < rhs.threadId
-            }
-            .map { thread in
-                if let metadataSession = matchedStoreSessions[thread.threadId] {
-                    return sessionState(for: thread, metadataSession: metadataSession)
-                }
-                return syntheticSession(from: thread)
-            }
-
-        let matchedSessionIds = Set(matchedStoreSessions.values.map(\.sessionId))
-        let fallbackLocalSessions = localStoreSessions
-            .filter { !matchedSessionIds.contains($0.sessionId) }
+        let visibleLocalSessions = localStoreSessions
             .map(overlayLocalAppServerState)
 
         let nonCodexSessions = sessions.filter { $0.provider != .codex }
-        return nonCodexSessions + localThreadSessions + fallbackLocalSessions
+        return nonCodexSessions + visibleLocalSessions
     }
 
     func localStoreSessionByThreadId(from sessions: [SessionState]) -> [String: SessionState] {

@@ -944,7 +944,7 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testLocalAppServerOnlyThreadAppearsAsSyntheticSessionAndCanSendMessage() async throws {
+    func testLocalAppServerOnlyThreadStaysOutOfNotchInstancesButCanSendMessage() async throws {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(
             id: "local-app-server",
@@ -993,16 +993,15 @@ final class PendingInteractionTests: XCTestCase {
         ))
         await Task.yield()
 
-        guard let syntheticSession = sessionMonitor.instances.first(where: { $0.sessionId == "app-thread-1" }) else {
-            return XCTFail("Expected synthetic local session")
-        }
+        XCTAssertFalse(sessionMonitor.instances.contains(where: { $0.sessionId == "app-thread-1" }))
+        let resumeCandidate = try XCTUnwrap(
+            sessionMonitor.availableLocalThreads().first(where: { $0.sessionId == "app-thread-1" })
+        )
+        XCTAssertEqual(resumeCandidate.provider, .codex)
+        XCTAssertEqual(resumeCandidate.displayTitle, "Synthetic Local Session")
+        XCTAssertFalse(resumeCandidate.canAttemptFocusTerminal)
 
-        XCTAssertEqual(syntheticSession.provider, .codex)
-        XCTAssertEqual(syntheticSession.displayTitle, "Synthetic Local Session")
-        XCTAssertEqual(syntheticSession.lastMessage, "hello from synthetic thread")
-        XCTAssertFalse(syntheticSession.canAttemptFocusTerminal)
-
-        let success = await sessionMonitor.sendMessage(sessionId: syntheticSession.sessionId, text: "send to synthetic")
+        let success = await sessionMonitor.sendMessage(sessionId: resumeCandidate.sessionId, text: "send to synthetic")
         let capturedThreadId = await sentThreadId.get()
         let capturedText = await sentText.get()
 
@@ -1086,8 +1085,8 @@ final class PendingInteractionTests: XCTestCase {
             return XCTFail("Expected merged local session")
         }
 
-        XCTAssertEqual(session.sessionId, "app-thread-visible")
-        XCTAssertEqual(session.logicalSessionId, "remote|local-app-server|/tmp/primary-project")
+        XCTAssertEqual(session.sessionId, "hook-session")
+        XCTAssertEqual(session.logicalSessionId, "local|apple_terminal|window-tab|window-1|tab-1")
         XCTAssertEqual(session.tty, "ttys001")
         XCTAssertEqual(session.terminalWindowId, "window-1")
         XCTAssertEqual(session.displayTitle, "Visible Thread")
@@ -1095,7 +1094,7 @@ final class PendingInteractionTests: XCTestCase {
     }
 
     @MainActor
-    func testChatHistoryManagerTracksVisibleLocalThreadHistory() async throws {
+    func testChatHistoryManagerDoesNotTrackHiddenAppServerOnlyThreadHistory() async throws {
         let connection = FakeRemoteConnection()
         let host = RemoteHostConfig(
             id: "local-app-server",
@@ -1140,16 +1139,16 @@ final class PendingInteractionTests: XCTestCase {
         ))
         await Task.yield()
 
-        guard let session = sessionMonitor.instances.first(where: { $0.sessionId == "app-thread-history" }) else {
-            return XCTFail("Expected visible local thread session")
-        }
-
-        let cachedHistory = ChatHistoryManager.shared.history(for: session.logicalSessionId)
-        XCTAssertEqual(cachedHistory.count, 2)
-        XCTAssertTrue(
+        XCTAssertFalse(sessionMonitor.instances.contains(where: { $0.sessionId == "app-thread-history" }))
+        let resumeCandidate = try XCTUnwrap(
+            sessionMonitor.availableLocalThreads().first(where: { $0.sessionId == "app-thread-history" })
+        )
+        let cachedHistory = ChatHistoryManager.shared.history(for: resumeCandidate.logicalSessionId)
+        XCTAssertTrue(cachedHistory.isEmpty)
+        XCTAssertFalse(
             ChatHistoryManager.shared.isLoaded(
-                logicalSessionId: session.logicalSessionId,
-                sessionId: session.sessionId
+                logicalSessionId: resumeCandidate.logicalSessionId,
+                sessionId: resumeCandidate.sessionId
             )
         )
     }
@@ -1189,11 +1188,7 @@ final class PendingInteractionTests: XCTestCase {
                 cwd: "/tmp/archive-project"
             )
         ))
-        try await waitUntil {
-            await MainActor.run {
-                sessionMonitor.instances.contains(where: { $0.sessionId == "app-thread-archive" })
-            }
-        }
+        await Task.yield()
 
         sessionMonitor.dismissedSyntheticSessionIds.insert("app-thread-archive")
         sessionMonitor.updateFromSessions([])
@@ -1326,7 +1321,8 @@ final class PendingInteractionTests: XCTestCase {
         XCTAssertEqual(observedCwd, "/tmp/fresh-project")
         XCTAssertEqual(opened.sessionId, "fresh-local-thread")
         XCTAssertEqual(opened.cwd, "/tmp/fresh-project")
-        XCTAssertTrue(sessionMonitor.instances.contains(where: { $0.sessionId == "fresh-local-thread" }))
+        XCTAssertFalse(sessionMonitor.instances.contains(where: { $0.sessionId == "fresh-local-thread" }))
+        XCTAssertTrue(sessionMonitor.availableLocalThreads().contains(where: { $0.sessionId == "fresh-local-thread" }))
     }
 
     @MainActor
@@ -1380,7 +1376,27 @@ final class PendingInteractionTests: XCTestCase {
         XCTAssertEqual(opened.sessionId, "resume-local-thread")
         XCTAssertEqual(opened.displayTitle, "Resumed Local")
         XCTAssertEqual(opened.lastMessage, "restored")
-        XCTAssertTrue(sessionMonitor.instances.contains(where: { $0.sessionId == "resume-local-thread" }))
+        XCTAssertFalse(sessionMonitor.instances.contains(where: { $0.sessionId == "resume-local-thread" }))
+    }
+
+    @MainActor
+    func testSyntheticLocalThreadDoesNotAppearInNotchInstancesWithoutHookSession() async throws {
+        let harness = makeLocalAppServerHarness()
+
+        harness.localMonitor.startMonitoring()
+        harness.localMonitor.apply(event: .threadUpsert(
+            hostId: harness.host.id,
+            thread: makeThread(
+                id: "resume-local-thread",
+                preview: "Resumed Local",
+                status: .idle,
+                cwd: "/tmp/resume-project"
+            )
+        ))
+        await Task.yield()
+
+        XCTAssertFalse(harness.sessionMonitor.instances.contains(where: { $0.sessionId == "resume-local-thread" }))
+        XCTAssertTrue(harness.sessionMonitor.availableLocalThreads().contains(where: { $0.sessionId == "resume-local-thread" }))
     }
 
     // 用最小问题集构造 codexLocal 交互，避免每个 presentation mode 用例都重复手写 transport 细节。
