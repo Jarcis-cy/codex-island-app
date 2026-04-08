@@ -102,6 +102,69 @@ final class HookInstallerTests: XCTestCase {
         XCTAssertEqual(permissions.intValue, 0o644)
     }
 
+    func testInstallIfNeededDoesNotCorruptTopLevelKeysWhenCodexHooksAlreadyExists() throws {
+        let home = try makeTemporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let codexDir = home.appendingPathComponent(".codex", isDirectory: true)
+        let hooksDir = codexDir.appendingPathComponent("hooks", isDirectory: true)
+        try FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+
+        let configToml = codexDir.appendingPathComponent("config.toml")
+        let bundledScript = home.appendingPathComponent("bundled.py")
+
+        let originalConfig = """
+        model_provider = "packycode"
+        model = "gpt-5.4"
+        model_reasonable_response_storage = true
+
+        [features]
+        unified_exec = true
+        codex_hooks = false
+        """
+        try originalConfig.write(to: configToml, atomically: true, encoding: .utf8)
+        try Data("new-script".utf8).write(to: bundledScript)
+
+        try HookInstaller.installIfNeeded(
+            homeDirectory: home,
+            bundledScriptURL: bundledScript
+        )
+
+        let updatedConfig = try String(contentsOf: configToml, encoding: .utf8)
+        XCTAssertTrue(updatedConfig.contains("model_reasonable_response_storage = true"))
+        XCTAssertFalse(updatedConfig.contains("model_reacodex_hooks"))
+        XCTAssertEqual(updatedConfig.components(separatedBy: "codex_hooks").count - 1, 1)
+        XCTAssertTrue(updatedConfig.contains("codex_hooks = true"))
+    }
+
+    func testInstallIfNeededLeavesConfigUntouchedWhenCodexHooksAlreadyTrue() throws {
+        let home = try makeTemporaryHome()
+        defer { try? FileManager.default.removeItem(at: home) }
+
+        let codexDir = home.appendingPathComponent(".codex", isDirectory: true)
+        let hooksDir = codexDir.appendingPathComponent("hooks", isDirectory: true)
+        try FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true)
+
+        let configToml = codexDir.appendingPathComponent("config.toml")
+        let bundledScript = home.appendingPathComponent("bundled.py")
+
+        let originalConfig = """
+        [features]
+        codex_hooks = true
+        unified_exec = true
+        """
+        try originalConfig.write(to: configToml, atomically: true, encoding: .utf8)
+        try Data("new-script".utf8).write(to: bundledScript)
+
+        try HookInstaller.installIfNeeded(
+            homeDirectory: home,
+            bundledScriptURL: bundledScript
+        )
+
+        let updatedConfig = try String(contentsOf: configToml, encoding: .utf8)
+        XCTAssertEqual(updatedConfig, originalConfig)
+    }
+
     func testUninstallRestoresManagedScriptWhenHooksConfigIsInvalid() throws {
         let home = try makeTemporaryHome()
         defer { try? FileManager.default.removeItem(at: home) }

@@ -196,6 +196,9 @@ struct HookInstaller {
         }
 
         let content = updatedConfigContentEnablingCodexHooks(initialContent)
+        guard content != initialContent else {
+            return
+        }
 
         if !fileManager.fileExists(atPath: configURL.deletingLastPathComponent().path) {
             do {
@@ -233,15 +236,21 @@ struct HookInstaller {
         let featureBodyRange = featuresRange.upperBound ..< sectionEnd
         let featureBody = String(normalizedContent[featureBodyRange])
 
-        if let codexHooksRange = featureBody.range(
+        if let codexHooksRange = normalizedContent.range(
             of: #"(?m)^(\s*codex_hooks\s*=\s*)(true|false)\s*(#.*)?$"#,
-            options: .regularExpression
+            options: .regularExpression,
+            range: featureBodyRange
         ) {
-            let existingLine = String(featureBody[codexHooksRange])
+            let existingLine = String(normalizedContent[codexHooksRange])
+            let leadingWhitespace = String(existingLine.prefix { $0.isWhitespace && $0 != "#" })
             let comment = existingLine.firstIndex(of: "#").map { String(existingLine[$0...]).trimmingCharacters(in: .whitespaces) }
-            var replacement = "codex_hooks = true"
+            var replacement = "\(leadingWhitespace)codex_hooks = true"
             if let comment, !comment.isEmpty {
                 replacement.append(" \(comment)")
+            }
+
+            if existingLine == replacement {
+                return content
             }
 
             var updatedContent = normalizedContent
