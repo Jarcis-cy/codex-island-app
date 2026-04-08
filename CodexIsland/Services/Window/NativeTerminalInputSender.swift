@@ -110,7 +110,7 @@ actor NativeTerminalInputSender {
                 script = """
                 tell application "Ghostty"
                     focus \(target)
-                    input text "\(appleScriptEscaped(text))" to \(target)
+                    input text "\(TerminalAppleScript.escaped(text))" to \(target)
                 end tell
                 return "ok"
                 """
@@ -118,7 +118,7 @@ actor NativeTerminalInputSender {
                 script = """
                 tell application "Ghostty"
                     focus \(target)
-                    send key "\(appleScriptEscaped(key))" to \(target)
+                    send key "\(TerminalAppleScript.escaped(key))" to \(target)
                 end tell
                 return "ok"
                 """
@@ -153,16 +153,15 @@ actor NativeTerminalInputSender {
 
     private func sendToITerm(steps: [TerminalInputStep], tty: String?) async -> Bool {
         guard let tty else { return false }
-        let shortTTY = appleScriptEscaped(tty.replacingOccurrences(of: "/dev/", with: ""))
-        let fullTTY = appleScriptEscaped(tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)")
+        let ttyVariants = TerminalAppleScript.ttyVariants(for: tty)
 
         for step in steps {
             let command: String
             switch step {
             case .text(let text):
-                command = #"write text "\#(appleScriptEscaped(text))" newline no"#
+                command = #"write text "\#(TerminalAppleScript.escaped(text))" newline no"#
             case .key(let key):
-                command = #"write text "\#(appleScriptEscaped(key))" newline no"#
+                command = #"write text "\#(TerminalAppleScript.escaped(key))" newline no"#
             case .enter:
                 command = #"write text "" newline yes"#
             case .escape:
@@ -173,12 +172,12 @@ actor NativeTerminalInputSender {
             tell application "iTerm2"
                 repeat with w in windows
                     repeat with t in tabs of w
-                        repeat with s in sessions of t
-                            set sessionTTY to (tty of s as text)
-                            if sessionTTY is "\(shortTTY)" or sessionTTY is "\(fullTTY)" then
-                                tell s
-                                    \(command)
-                                end tell
+                    repeat with s in sessions of t
+                        set sessionTTY to (tty of s as text)
+                        if sessionTTY is "\(ttyVariants.short)" or sessionTTY is "\(ttyVariants.full)" then
+                            tell s
+                                \(command)
+                            end tell
                                 return "ok"
                             end if
                         end repeat
@@ -206,9 +205,9 @@ actor NativeTerminalInputSender {
         for step in steps {
             switch step {
             case .text(let text):
-                commands.append(#"keystroke "\#(appleScriptEscaped(text))""#)
+                commands.append(#"keystroke "\#(TerminalAppleScript.escaped(text))""#)
             case .key(let key):
-                commands.append(#"keystroke "\#(appleScriptEscaped(key))""#)
+                commands.append(#"keystroke "\#(TerminalAppleScript.escaped(key))""#)
             case .enter:
                 commands.append("key code 36")
             case .escape:
@@ -233,25 +232,18 @@ actor NativeTerminalInputSender {
 
     private func ghosttyTargetSpecifier(session: SessionState) -> String? {
         if let surfaceId = session.terminalSurfaceId {
-            return #"terminal id "\#(appleScriptEscaped(surfaceId))""#
+            return #"terminal id "\#(TerminalAppleScript.escaped(surfaceId))""#
         }
         return nil
     }
 
     private func run(script: String) async -> String? {
-        let result = await ProcessExecutor.shared.runWithResult("/usr/bin/osascript", arguments: ["-e", script])
-        switch result {
-        case .success(let processResult):
-            return processResult.output.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch await TerminalAppleScript.run(script) {
+        case .success(let output):
+            return output
         case .failure(let error):
             Self.logger.error("osascript terminal input failed: \(error.localizedDescription, privacy: .public)")
             return nil
         }
-    }
-
-    private nonisolated func appleScriptEscaped(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }

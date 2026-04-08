@@ -7,6 +7,30 @@
 
 import Foundation
 
+enum TerminalAppleScript {
+    nonisolated static func escaped(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
+    nonisolated static func ttyVariants(for tty: String) -> (short: String, full: String) {
+        let shortTTY = tty.replacingOccurrences(of: "/dev/", with: "")
+        let fullTTY = tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)"
+        return (escaped(shortTTY), escaped(fullTTY))
+    }
+
+    nonisolated static func run(_ script: String) async -> Result<String, Error> {
+        let result = await ProcessExecutor.shared.runWithResult("/usr/bin/osascript", arguments: ["-e", script])
+        switch result {
+        case .success(let processResult):
+            return .success(processResult.output.trimmingCharacters(in: .whitespacesAndNewlines))
+        case .failure(let error):
+            return .failure(error)
+        }
+    }
+}
+
 actor NativeTerminalScriptFocuser {
     static let shared = NativeTerminalScriptFocuser()
 
@@ -35,7 +59,7 @@ actor NativeTerminalScriptFocuser {
         if let surfaceId = session.terminalSurfaceId {
             let script = """
             tell application "Ghostty"
-                focus terminal id "\(appleScriptEscaped(surfaceId))"
+                focus terminal id "\(TerminalAppleScript.escaped(surfaceId))"
             end tell
             return "ok"
             """
@@ -48,8 +72,8 @@ actor NativeTerminalScriptFocuser {
            let windowId = session.terminalWindowId {
             let script = """
             tell application "Ghostty"
-                activate window id "\(appleScriptEscaped(windowId))"
-                select tab id "\(appleScriptEscaped(tabId))"
+                activate window id "\(TerminalAppleScript.escaped(windowId))"
+                select tab id "\(TerminalAppleScript.escaped(tabId))"
             end tell
             return "ok"
             """
@@ -61,7 +85,7 @@ actor NativeTerminalScriptFocuser {
         if let windowId = session.terminalWindowId {
             let script = """
             tell application "Ghostty"
-                activate window id "\(appleScriptEscaped(windowId))"
+                activate window id "\(TerminalAppleScript.escaped(windowId))"
             end tell
             return "ok"
             """
@@ -76,15 +100,14 @@ actor NativeTerminalScriptFocuser {
     private func focusTerminalApp(tty: String?) async -> Bool {
         guard let tty else { return false }
 
-        let shortTTY = appleScriptEscaped(tty.replacingOccurrences(of: "/dev/", with: ""))
-        let fullTTY = appleScriptEscaped(tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)")
+        let ttyVariants = TerminalAppleScript.ttyVariants(for: tty)
         let script = """
         tell application "Terminal"
             activate
             repeat with w in windows
                 repeat with t in tabs of w
                     set terminalTTY to (tty of t as text)
-                    if terminalTTY is "\(shortTTY)" or terminalTTY is "\(fullTTY)" then
+                    if terminalTTY is "\(ttyVariants.short)" or terminalTTY is "\(ttyVariants.full)" then
                         set selected of t to true
                         set frontmost of w to true
                         return "ok"
@@ -101,8 +124,7 @@ actor NativeTerminalScriptFocuser {
     private func focusITerm(tty: String?) async -> Bool {
         guard let tty else { return false }
 
-        let shortTTY = appleScriptEscaped(tty.replacingOccurrences(of: "/dev/", with: ""))
-        let fullTTY = appleScriptEscaped(tty.hasPrefix("/dev/") ? tty : "/dev/\(tty)")
+        let ttyVariants = TerminalAppleScript.ttyVariants(for: tty)
         let script = """
         tell application "iTerm2"
             activate
@@ -110,7 +132,7 @@ actor NativeTerminalScriptFocuser {
                 repeat with t in tabs of w
                     repeat with s in sessions of t
                         set sessionTTY to (tty of s as text)
-                        if sessionTTY is "\(shortTTY)" or sessionTTY is "\(fullTTY)" then
+                        if sessionTTY is "\(ttyVariants.short)" or sessionTTY is "\(ttyVariants.full)" then
                             tell w
                                 set current tab to t
                                 set frontmost to true
@@ -131,15 +153,11 @@ actor NativeTerminalScriptFocuser {
     }
 
     private func run(script: String) async -> String? {
-        guard let output = await ProcessExecutor.shared.runOrNil("/usr/bin/osascript", arguments: ["-e", script]) else {
+        switch await TerminalAppleScript.run(script) {
+        case .success(let output):
+            return output
+        case .failure:
             return nil
         }
-        return output.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private nonisolated func appleScriptEscaped(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }

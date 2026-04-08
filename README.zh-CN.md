@@ -91,6 +91,7 @@ xcodebuild -scheme CodexIsland -configuration Debug build
 ```
 
 导出的应用位于 `build/export/Codex Island.app`。
+如果当前环境缺少签名配置导致 `exportArchive` 失败，`./scripts/build.sh` 现在会自动回退到 `build/release-assets/` 下的 unsigned zip。
 
 ## SSH 远端主机
 
@@ -144,11 +145,14 @@ ssh -T -o BatchMode=yes <target> codex app-server --listen stdio://
 ```bash
 brew install swiftformat swiftlint
 ./scripts/swift-quality.sh
+./scripts/heuristic-quality-report.sh
 ./scripts/install-git-hooks.sh
 ./scripts/create-release.sh
 ```
 
 `./scripts/swift-quality.sh` 会在同一轮里同时检查 `CodexIsland/` 和 `CodexIslandTests/`。`./scripts/install-git-hooks.sh` 会把 Git 切到仓库内的 `.githooks/` 包装层，先保留 beads 现有 hooks，再在 `pre-commit` 里追加已暂存 Swift 文件的质量检查，避免历史质量债阻塞无关提交。
+
+`fuck-u-code` 在本仓库被校准为“非阻塞审计信号”，不会直接作为 CI 门禁，因为当前 Swift 解析经常回退到 regex 模式。仓库级阈值和分级策略见 [`docs/quality-heuristics.md`](./docs/quality-heuristics.md)。
 
 如果改动了 `CodexIsland/Services/Hooks/` 或 `CodexIsland/Resources/codex-island-state.py`，要把它视为会直接影响用户本地 Codex 环境的高风险改动，务必手工验证。
 

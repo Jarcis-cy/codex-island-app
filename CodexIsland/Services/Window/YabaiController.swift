@@ -60,20 +60,16 @@ actor YabaiController {
     // MARK: - Tmux Helpers
 
     private func findTmuxClientTerminal(forSession session: String, tree: [Int: ProcessInfo], windows: [YabaiWindow]) async -> Int? {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else { return nil }
-
-        do {
-            let output = try await ProcessExecutor.shared.run(tmuxPath, arguments: [
-                "list-clients", "-t", session, "-F", "#{client_pid}"
-            ])
-
-            for clientPid in parseClientPids(from: output) {
-                if let terminalPid = terminalPid(forClientPid: clientPid, tree: tree, windows: windows) {
-                    return terminalPid
-                }
-            }
-        } catch {
+        guard let output = await TmuxCommandRunner.shared.runOrNil(arguments: [
+            "list-clients", "-t", session, "-F", "#{client_pid}"
+        ]) else {
             return nil
+        }
+
+        for clientPid in parseClientPids(from: output) {
+            if let terminalPid = terminalPid(forClientPid: clientPid, tree: tree, windows: windows) {
+                return terminalPid
+            }
         }
 
         return nil
@@ -85,22 +81,18 @@ actor YabaiController {
     }
 
     private func focusTmuxPane(forWorkingDir workingDir: String, tree: [Int: ProcessInfo], windows: [YabaiWindow]) async -> Bool {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else { return false }
-
-        do {
-            let panesOutput = try await ProcessExecutor.shared.run(tmuxPath, arguments: [
-                "list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}|#{pane_pid}"
-            ])
-
-            guard let paneMatch = matchingPane(forWorkingDir: workingDir, panesOutput: panesOutput, tree: tree) else {
-                return false
-            }
-
-            _ = await TmuxController.shared.switchToPane(target: paneMatch.target)
-            return await focusTerminal(forSession: paneMatch.target.session, tree: tree, windows: windows)
-        } catch {
+        guard let panesOutput = await TmuxCommandRunner.shared.runOrNil(arguments: [
+            "list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index}|#{pane_pid}"
+        ]) else {
             return false
         }
+
+        guard let paneMatch = matchingPane(forWorkingDir: workingDir, panesOutput: panesOutput, tree: tree) else {
+            return false
+        }
+
+        _ = await TmuxController.shared.switchToPane(target: paneMatch.target)
+        return await focusTerminal(forSession: paneMatch.target.session, tree: tree, windows: windows)
     }
 
     private func focusTerminal(forSession session: String, tree: [Int: ProcessInfo], windows: [YabaiWindow]) async -> Bool {
@@ -122,17 +114,10 @@ actor YabaiController {
         windows: [YabaiWindow]
     ) -> Int? {
         let windowPids = Set(windows.map(\.pid))
-        var currentPid = clientPid
 
-        while currentPid > 1 {
-            guard let info = tree[currentPid] else { break }
-            if isTerminalProcess(info.command) && windowPids.contains(currentPid) {
-                return currentPid
-            }
-            currentPid = info.ppid
+        return ProcessTreeBuilder.shared.firstAncestorPid(startingAt: clientPid, tree: tree) { info in
+            isTerminalProcess(info.command) && windowPids.contains(info.pid)
         }
-
-        return nil
     }
 
     private func matchingPane(

@@ -7,6 +7,28 @@
 
 import Foundation
 
+actor TmuxCommandRunner {
+    static let shared = TmuxCommandRunner()
+
+    private init() {}
+
+    func run(arguments: [String]) async throws -> String {
+        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
+            throw TmuxCommandError.tmuxNotFound
+        }
+
+        return try await ProcessExecutor.shared.run(tmuxPath, arguments: arguments)
+    }
+
+    func runOrNil(arguments: [String]) async -> String? {
+        try? await run(arguments: arguments)
+    }
+}
+
+enum TmuxCommandError: Error {
+    case tmuxNotFound
+}
+
 /// Finds tmux session/window/pane targets for Claude processes
 actor TmuxTargetFinder {
     static let shared = TmuxTargetFinder()
@@ -15,11 +37,7 @@ actor TmuxTargetFinder {
 
     /// Find the tmux target for a given Claude PID
     func findTarget(forClaudePid claudePid: Int) async -> TmuxTarget? {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return nil
-        }
-
-        guard let output = await runTmuxCommand(tmuxPath: tmuxPath, args: [
+        guard let output = await TmuxCommandRunner.shared.runOrNil(arguments: [
             "list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index} #{pane_pid}"
         ]) else {
             return nil
@@ -44,11 +62,7 @@ actor TmuxTargetFinder {
 
     /// Find the tmux target for a given working directory
     func findTarget(forWorkingDirectory workingDir: String) async -> TmuxTarget? {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return nil
-        }
-
-        guard let output = await runTmuxCommand(tmuxPath: tmuxPath, args: [
+        guard let output = await TmuxCommandRunner.shared.runOrNil(arguments: [
             "list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index} #{pane_current_path}"
         ]) else {
             return nil
@@ -71,11 +85,7 @@ actor TmuxTargetFinder {
 
     /// Find the tmux target for a given pane TTY
     func findTarget(forTTY tty: String) async -> TmuxTarget? {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return nil
-        }
-
-        guard let output = await runTmuxCommand(tmuxPath: tmuxPath, args: [
+        guard let output = await TmuxCommandRunner.shared.runOrNil(arguments: [
             "list-panes", "-a", "-F", "#{session_name}:#{window_index}.#{pane_index} #{pane_tty}"
         ]) else {
             return nil
@@ -100,17 +110,11 @@ actor TmuxTargetFinder {
 
     /// Check if a session's tmux pane is currently the active pane
     func isSessionPaneActive(claudePid: Int) async -> Bool {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return false
-        }
-
-        // Find which pane the Claude session is in
         guard let sessionTarget = await findTarget(forClaudePid: claudePid) else {
             return false
         }
 
-        // Get the currently active pane
-        guard let output = await runTmuxCommand(tmuxPath: tmuxPath, args: [
+        guard let output = await TmuxCommandRunner.shared.runOrNil(arguments: [
             "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}"
         ]) else {
             return false
@@ -118,15 +122,5 @@ actor TmuxTargetFinder {
 
         let activeTarget = output.trimmingCharacters(in: .whitespacesAndNewlines)
         return sessionTarget.targetString == activeTarget
-    }
-
-    // MARK: - Private Methods
-
-    private func runTmuxCommand(tmuxPath: String, args: [String]) async -> String? {
-        do {
-            return try await ProcessExecutor.shared.run(tmuxPath, arguments: args)
-        } catch {
-            return nil
-        }
     }
 }

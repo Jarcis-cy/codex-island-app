@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0"
+     xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle"
+     xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Codex Island Updates</title>
+    <link>https://github.com/Jarcis-cy/codex-island-app/releases</link>
+    <description>
+      Sparkle appcast for Codex Island. Unsigned fallback releases do not publish update items.
+    </description>
+    <language>en</language>
+  </channel>
+</rss>

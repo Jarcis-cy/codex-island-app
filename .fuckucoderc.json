@@ -1,0 +1,42 @@
+{
+  "exclude": [
+    ".beads/**",
+    "build/**",
+    "docs/media/**",
+    "releases/**",
+    "sidecar/**",
+    "**/*.xcarchive/**"
+  ],
+  "include": [
+    "CodexIsland/**/*",
+    "CodexIslandTests/**/*",
+    "scripts/**/*",
+    "README.md",
+    "README.zh-CN.md"
+  ],
+  "concurrency": 8,
+  "verbose": false,
+  "output": {
+    "format": "console",
+    "top": 20,
+    "maxIssues": 10,
+    "showDetails": true
+  },
+  "metrics": {
+    "weights": {
+      "complexity": 0.2,
+      "duplication": 0.12,
+      "size": 0.12,
+      "structure": 0.08,
+      "error": 0.1,
+      "documentation": 0.32,
+      "naming": 0.06
+    }
+  },
+  "ai": {
+    "enabled": false
+  },
+  "i18n": {
+    "locale": "zh"
+  }
+}

@@ -53,15 +53,8 @@ actor ToolApprovalHandler {
     }
 
     func sendKey(_ key: String, to target: TmuxTarget) async -> Bool {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return false
-        }
-
         do {
-            _ = try await ProcessExecutor.shared.run(
-                tmuxPath,
-                arguments: ["send-keys", "-t", target.targetString, key]
-            )
+            _ = try await TmuxCommandRunner.shared.run(arguments: ["send-keys", "-t", target.targetString, key])
             return true
         } catch {
             Self.logger.error("Error: \(error.localizedDescription, privacy: .public)")
@@ -72,24 +65,17 @@ actor ToolApprovalHandler {
     // MARK: - Private Methods
 
     private func sendKeys(to target: TmuxTarget, keys: String, pressEnter: Bool) async -> Bool {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return false
-        }
-
-        // tmux send-keys needs literal text and Enter as separate arguments
-        // Use -l flag to send keys literally (prevents interpreting special chars)
         let targetStr = target.targetString
         let textArgs = ["send-keys", "-t", targetStr, "-l", keys]
 
         do {
             Self.logger.debug("Sending text to \(targetStr, privacy: .public)")
-            _ = try await ProcessExecutor.shared.run(tmuxPath, arguments: textArgs)
+            _ = try await TmuxCommandRunner.shared.run(arguments: textArgs)
 
-            // Send Enter as a separate command if needed
             if pressEnter {
                 Self.logger.debug("Sending Enter key")
                 let enterArgs = ["send-keys", "-t", targetStr, "Enter"]
-                _ = try await ProcessExecutor.shared.run(tmuxPath, arguments: enterArgs)
+                _ = try await TmuxCommandRunner.shared.run(arguments: enterArgs)
             }
             return true
         } catch {

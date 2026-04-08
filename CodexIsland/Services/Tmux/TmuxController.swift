@@ -42,16 +42,12 @@ actor TmuxController {
     }
 
     func switchToPane(target: TmuxTarget) async -> Bool {
-        guard let tmuxPath = await TmuxPathFinder.shared.getTmuxPath() else {
-            return false
-        }
-
         do {
-            _ = try await ProcessExecutor.shared.run(tmuxPath, arguments: [
+            _ = try await TmuxCommandRunner.shared.run(arguments: [
                 "select-window", "-t", "\(target.session):\(target.window)"
             ])
 
-            _ = try await ProcessExecutor.shared.run(tmuxPath, arguments: [
+            _ = try await TmuxCommandRunner.shared.run(arguments: [
                 "select-pane", "-t", target.targetString
             ])
 

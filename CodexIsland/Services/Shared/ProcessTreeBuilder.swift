@@ -56,38 +56,16 @@ nonisolated struct ProcessTreeBuilder: Sendable {
 
     /// Check if a process has tmux in its parent chain
     nonisolated func isInTmux(pid: Int, tree: [Int: ProcessInfo]) -> Bool {
-        var current = pid
-        var depth = 0
-
-        while current > 1 && depth < 20 {
-            guard let info = tree[current] else { break }
-            if info.command.lowercased().contains("tmux") {
-                return true
-            }
-            current = info.ppid
-            depth += 1
-        }
-
-        return false
+        firstAncestor(startingAt: pid, tree: tree) { info in
+            info.command.lowercased().contains("tmux")
+        } != nil
     }
 
     /// Walk up the process tree to find the terminal app PID
     nonisolated func findTerminalPid(forProcess pid: Int, tree: [Int: ProcessInfo]) -> Int? {
-        var current = pid
-        var depth = 0
-
-        while current > 1 && depth < 20 {
-            guard let info = tree[current] else { break }
-
-            if TerminalAppRegistry.isTerminal(info.command) {
-                return current
-            }
-
-            current = info.ppid
-            depth += 1
+        firstAncestorPid(startingAt: pid, tree: tree) { info in
+            TerminalAppRegistry.isTerminal(info.command)
         }
-
-        return nil
     }
 
     /// Check if targetPid is a descendant of ancestorPid
@@ -123,6 +101,36 @@ nonisolated struct ProcessTreeBuilder: Sendable {
         }
 
         return descendants
+    }
+
+    nonisolated func firstAncestor(
+        startingAt pid: Int,
+        tree: [Int: ProcessInfo],
+        maxDepth: Int = 20,
+        where predicate: (ProcessInfo) -> Bool
+    ) -> ProcessInfo? {
+        var current = pid
+        var depth = 0
+
+        while current > 1 && depth < maxDepth {
+            guard let info = tree[current] else { break }
+            if predicate(info) {
+                return info
+            }
+            current = info.ppid
+            depth += 1
+        }
+
+        return nil
+    }
+
+    nonisolated func firstAncestorPid(
+        startingAt pid: Int,
+        tree: [Int: ProcessInfo],
+        maxDepth: Int = 20,
+        where predicate: (ProcessInfo) -> Bool
+    ) -> Int? {
+        firstAncestor(startingAt: pid, tree: tree, maxDepth: maxDepth, where: predicate)?.pid
     }
 
     /// Get working directory for a process using lsof

@@ -1,0 +1,30 @@
+name: Swift Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  swift-quality:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install toolchain helpers
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: brew install swiftformat swiftlint xcpretty
+
+      - name: Run Swift quality baseline
+        run: ./scripts/swift-quality.sh --all
+
+      - name: Build Debug app
+        run: xcodebuild -scheme CodexIsland -configuration Debug build
+
+      - name: Run tests
+        run: xcodebuild test -scheme CodexIsland -destination 'platform=macOS'
