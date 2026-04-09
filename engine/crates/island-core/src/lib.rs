@@ -1,3 +1,6 @@
+use std::collections::VecDeque;
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use codex_island_proto::{
     AppServerHealth, AppServerLifecycleState, ClientCommand, EngineSnapshot, ErrorCode,
     HostCapabilities, HostHealthSnapshot, HostHealthStatus, HostPlatform, PairedDeviceRecord,
@@ -5,12 +8,66 @@ use codex_island_proto::{
 };
 use serde_json::Value;
 
+const INITIAL_RECONNECT_BACKOFF_MS: u64 = 1_000;
+const MAX_RECONNECT_BACKOFF_MS: u64 = 30_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ClientConnectionState {
     Disconnected,
     Connecting,
     Connected,
     Error,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandKind {
+    Hello,
+    GetSnapshot,
+    PairStart,
+    PairConfirm,
+    PairRevoke,
+    AppServerRequest,
+    AppServerInterrupt,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct QueuedCommand {
+    pub queue_id: u64,
+    pub kind: CommandKind,
+    pub command: ClientCommand,
+    pub enqueued_at_ms: u64,
+    pub last_sent_at_ms: Option<u64>,
+    pub attempt_count: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ReconnectState {
+    pub should_reconnect: bool,
+    pub reconnect_pending: bool,
+    pub attempt_count: u32,
+    pub current_backoff_ms: u64,
+    pub next_backoff_ms: Option<u64>,
+    pub last_scheduled_at_ms: Option<u64>,
+    pub last_reconnected_at_ms: Option<u64>,
+    pub last_disconnect_reason: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ConnectionDiagnostics {
+    pub connect_attempts: u32,
+    pub successful_connects: u32,
+    pub disconnect_count: u32,
+    pub auth_failures: u32,
+    pub protocol_error_count: u32,
+    pub transport_error_count: u32,
+    pub last_connect_requested_at_ms: Option<u64>,
+    pub last_hello_sent_at_ms: Option<u64>,
+    pub last_hello_ack_at_ms: Option<u64>,
+    pub last_snapshot_at_ms: Option<u64>,
+    pub last_disconnect_at_ms: Option<u64>,
+    pub last_error_at_ms: Option<u64>,
+    pub last_error_message: Option<String>,
+    pub last_response_request_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -21,6 +78,10 @@ pub struct ClientRuntimeState {
     pub last_app_server_event: Option<Value>,
     pub authenticated: bool,
     pub auth_token: Option<String>,
+    pub pending_commands: Vec<QueuedCommand>,
+    pub in_flight_command: Option<QueuedCommand>,
+    pub reconnect: ReconnectState,
+    pub diagnostics: ConnectionDiagnostics,
 }
 
 #[derive(Debug, Clone)]
@@ -28,6 +89,8 @@ pub struct ClientRuntime {
     client_name: String,
     client_version: String,
     state: ClientRuntimeState,
+    pending_commands: VecDeque<QueuedCommand>,
+    next_queue_id: u64,
 }
 
 impl ClientRuntime {
@@ -36,6 +99,7 @@ impl ClientRuntime {
         client_version: impl Into<String>,
         auth_token: Option<String>,
     ) -> Self {
+        let authenticated = auth_token.is_some();
         Self {
             client_name: client_name.into(),
             client_version: client_version.into(),
@@ -44,9 +108,15 @@ impl ClientRuntime {
                 snapshot: default_snapshot(),
                 last_error: None,
                 last_app_server_event: None,
-                authenticated: auth_token.is_some(),
+                authenticated,
                 auth_token,
+                pending_commands: Vec::new(),
+                in_flight_command: None,
+                reconnect: ReconnectState::default(),
+                diagnostics: ConnectionDiagnostics::default(),
             },
+            pending_commands: VecDeque::new(),
+            next_queue_id: 1,
         }
     }
 
@@ -78,6 +148,68 @@ impl ClientRuntime {
 
     pub fn state_mut(&mut self) -> &mut ClientRuntimeState {
         &mut self.state
+    }
+
+    pub fn set_should_reconnect(&mut self, should_reconnect: bool) {
+        self.state.reconnect.should_reconnect = should_reconnect;
+        if !should_reconnect {
+            self.state.reconnect.reconnect_pending = false;
+            self.state.reconnect.next_backoff_ms = None;
+        }
+    }
+
+    pub fn request_connection(&mut self) {
+        let now = now_millis();
+        self.state.reconnect.should_reconnect = true;
+        self.state.connection = ClientConnectionState::Connecting;
+        self.state.diagnostics.connect_attempts += 1;
+        self.state.diagnostics.last_connect_requested_at_ms = Some(now);
+        self.ensure_hello_queued(true);
+    }
+
+    pub fn activate_reconnect_now(&mut self) -> bool {
+        if !self.state.reconnect.reconnect_pending {
+            return false;
+        }
+
+        let now = now_millis();
+        self.state.reconnect.reconnect_pending = false;
+        self.state.reconnect.attempt_count += 1;
+        self.state.reconnect.current_backoff_ms = self
+            .state
+            .reconnect
+            .next_backoff_ms
+            .unwrap_or(INITIAL_RECONNECT_BACKOFF_MS);
+        self.state.diagnostics.connect_attempts += 1;
+        self.state.diagnostics.last_connect_requested_at_ms = Some(now);
+        self.state.connection = ClientConnectionState::Connecting;
+        self.ensure_hello_queued(true);
+        true
+    }
+
+    pub fn transport_disconnected(&mut self, reason: Option<String>) {
+        let now = now_millis();
+        self.state.connection = ClientConnectionState::Disconnected;
+        self.state.diagnostics.disconnect_count += 1;
+        self.state.diagnostics.transport_error_count += 1;
+        self.state.diagnostics.last_disconnect_at_ms = Some(now);
+        self.state.reconnect.last_disconnect_reason = reason.clone();
+        self.state.diagnostics.last_error_message = reason;
+
+        if let Some(in_flight) = self.state.in_flight_command.take()
+            && should_retry_on_disconnect(in_flight.kind)
+        {
+            self.requeue_front(in_flight);
+        }
+
+        if self.state.reconnect.should_reconnect {
+            let next_backoff = next_backoff_ms(self.state.reconnect.current_backoff_ms);
+            self.state.reconnect.reconnect_pending = true;
+            self.state.reconnect.next_backoff_ms = Some(next_backoff);
+            self.state.reconnect.last_scheduled_at_ms = Some(now);
+        }
+
+        self.sync_queue_state();
     }
 
     pub fn hello_command(&mut self) -> ClientCommand {
@@ -148,7 +280,71 @@ impl ClientRuntime {
         }
     }
 
+    pub fn enqueue_get_snapshot(&mut self) -> u64 {
+        self.enqueue_command(self.get_snapshot_command())
+    }
+
+    pub fn enqueue_pair_start(
+        &mut self,
+        device_name: impl Into<String>,
+        client_platform: impl Into<String>,
+    ) -> u64 {
+        self.enqueue_command(self.pair_start_command(device_name, client_platform))
+    }
+
+    pub fn enqueue_pair_confirm(
+        &mut self,
+        pairing_code: impl Into<String>,
+        device_name: impl Into<String>,
+        client_platform: impl Into<String>,
+    ) -> u64 {
+        self.enqueue_command(self.pair_confirm_command(pairing_code, device_name, client_platform))
+    }
+
+    pub fn enqueue_pair_revoke(&mut self, device_id: impl Into<String>) -> u64 {
+        self.enqueue_command(self.pair_revoke_command(device_id))
+    }
+
+    pub fn enqueue_app_server_request(
+        &mut self,
+        request_id: impl Into<String>,
+        method: impl Into<String>,
+        params: Value,
+    ) -> u64 {
+        self.enqueue_command(self.app_server_request_command(request_id, method, params))
+    }
+
+    pub fn enqueue_app_server_interrupt(
+        &mut self,
+        thread_id: impl Into<String>,
+        turn_id: impl Into<String>,
+    ) -> u64 {
+        self.enqueue_command(self.app_server_interrupt_command(thread_id, turn_id))
+    }
+
+    pub fn pop_next_command(&mut self) -> Option<ClientCommand> {
+        if self.state.in_flight_command.is_some() {
+            return None;
+        }
+
+        let mut queued = self.pending_commands.pop_front()?;
+        let now = now_millis();
+        queued.attempt_count += 1;
+        queued.last_sent_at_ms = Some(now);
+
+        if queued.kind == CommandKind::Hello {
+            self.state.connection = ClientConnectionState::Connecting;
+            self.state.diagnostics.last_hello_sent_at_ms = Some(now);
+        }
+
+        let command = queued.command.clone();
+        self.state.in_flight_command = Some(queued);
+        self.sync_queue_state();
+        Some(command)
+    }
+
     pub fn apply_server_event(&mut self, event: ServerEvent) -> &ClientRuntimeState {
+        let now = now_millis();
         match event {
             ServerEvent::HelloAck {
                 protocol_version,
@@ -156,26 +352,38 @@ impl ClientRuntime {
                 host_id,
                 authenticated,
             } => {
+                self.clear_in_flight_if(|command| command.kind == CommandKind::Hello);
                 self.state.connection = ClientConnectionState::Connected;
                 self.state.authenticated = authenticated;
                 self.state.snapshot.health.protocol_version = protocol_version;
                 self.state.snapshot.health.daemon_version = daemon_version;
                 self.state.snapshot.health.host_id = host_id;
                 self.state.last_error = None;
+                self.state.reconnect.reconnect_pending = false;
+                self.state.reconnect.attempt_count = 0;
+                self.state.reconnect.current_backoff_ms = 0;
+                self.state.reconnect.next_backoff_ms = None;
+                self.state.reconnect.last_reconnected_at_ms = Some(now);
+                self.state.diagnostics.successful_connects += 1;
+                self.state.diagnostics.last_hello_ack_at_ms = Some(now);
             }
             ServerEvent::Snapshot { snapshot } => {
+                self.clear_in_flight_if(|command| command.kind == CommandKind::GetSnapshot);
                 self.state.connection = ClientConnectionState::Connected;
                 self.state.snapshot = snapshot;
                 self.state.last_error = None;
+                self.state.diagnostics.last_snapshot_at_ms = Some(now);
             }
             ServerEvent::HostHealthChanged { health } => {
                 self.state.connection = ClientConnectionState::Connected;
                 self.state.snapshot.health = health;
             }
             ServerEvent::PairingStarted { pairing } => {
+                self.clear_in_flight_if(|command| command.kind == CommandKind::PairStart);
                 self.state.snapshot.active_pairing = Some(pairing);
             }
             ServerEvent::PairingCompleted { device, token, .. } => {
+                self.clear_in_flight_if(|command| command.kind == CommandKind::PairConfirm);
                 self.state.snapshot.active_pairing = None;
                 upsert_device(&mut self.state.snapshot.paired_devices, device);
                 self.state.auth_token = Some(token.bearer_token);
@@ -183,6 +391,7 @@ impl ClientRuntime {
                 self.state.last_error = None;
             }
             ServerEvent::PairingRevoked { device_id } => {
+                self.clear_in_flight_if(|command| command.kind == CommandKind::PairRevoke);
                 self.state
                     .snapshot
                     .paired_devices
@@ -192,16 +401,112 @@ impl ClientRuntime {
                 self.state.connection = ClientConnectionState::Connected;
                 self.state.last_app_server_event = Some(payload);
             }
-            ServerEvent::AppServerResponse { .. } => {
+            ServerEvent::AppServerResponse { request_id, .. } => {
+                self.clear_in_flight_if(|command| {
+                    matches!(
+                        &command.command,
+                        ClientCommand::AppServerRequest {
+                            request_id: queued_id,
+                            ..
+                        } if queued_id == &request_id
+                    ) || matches!(
+                        &command.command,
+                        ClientCommand::AppServerInterrupt { .. }
+                    )
+                });
                 self.state.connection = ClientConnectionState::Connected;
+                self.state.diagnostics.last_response_request_id = Some(request_id);
             }
             ServerEvent::Error { error } => {
                 self.state.connection = classify_error(&error);
-                self.state.last_error = Some(error);
+                self.state.last_error = Some(error.clone());
+                self.state.diagnostics.last_error_at_ms = Some(now);
+                self.state.diagnostics.last_error_message = Some(error.message.clone());
+                match error.code {
+                    ErrorCode::Unauthorized => self.state.diagnostics.auth_failures += 1,
+                    ErrorCode::InvalidProtocolVersion | ErrorCode::AppServerProtocolError => {
+                        self.state.diagnostics.protocol_error_count += 1;
+                    }
+                    ErrorCode::AppServerUnavailable | ErrorCode::Internal => {
+                        self.state.diagnostics.transport_error_count += 1;
+                    }
+                    _ => {}
+                }
+                self.state.in_flight_command = None;
             }
         }
 
+        self.sync_queue_state();
         &self.state
+    }
+
+    fn enqueue_command(&mut self, command: ClientCommand) -> u64 {
+        let kind = command_kind(&command);
+        let queue_id = self.next_queue_id;
+        self.next_queue_id += 1;
+        self.pending_commands.push_back(QueuedCommand {
+            queue_id,
+            kind,
+            command,
+            enqueued_at_ms: now_millis(),
+            last_sent_at_ms: None,
+            attempt_count: 0,
+        });
+        self.sync_queue_state();
+        queue_id
+    }
+
+    fn ensure_hello_queued(&mut self, front: bool) {
+        if self.pending_commands.iter().any(|command| command.kind == CommandKind::Hello)
+            || self
+                .state
+                .in_flight_command
+                .as_ref()
+                .is_some_and(|command| command.kind == CommandKind::Hello)
+        {
+            self.sync_queue_state();
+            return;
+        }
+
+        let queued = QueuedCommand {
+            queue_id: self.next_queue_id,
+            kind: CommandKind::Hello,
+            command: self.hello_command(),
+            enqueued_at_ms: now_millis(),
+            last_sent_at_ms: None,
+            attempt_count: 0,
+        };
+        self.next_queue_id += 1;
+        if front {
+            self.pending_commands.push_front(queued);
+        } else {
+            self.pending_commands.push_back(queued);
+        }
+        self.sync_queue_state();
+    }
+
+    fn requeue_front(&mut self, mut queued: QueuedCommand) {
+        queued.last_sent_at_ms = None;
+        self.pending_commands.push_front(queued);
+        self.sync_queue_state();
+    }
+
+    fn clear_in_flight_if<F>(&mut self, predicate: F)
+    where
+        F: FnOnce(&QueuedCommand) -> bool,
+    {
+        if self
+            .state
+            .in_flight_command
+            .as_ref()
+            .is_some_and(predicate)
+        {
+            self.state.in_flight_command = None;
+        }
+    }
+
+    fn sync_queue_state(&mut self) {
+        self.state.pending_commands = self.pending_commands.iter().cloned().collect();
     }
 }
 
@@ -255,16 +560,53 @@ fn classify_error(error: &ProtocolError) -> ClientConnectionState {
     }
 }
 
+fn command_kind(command: &ClientCommand) -> CommandKind {
+    match command {
+        ClientCommand::Hello { .. } => CommandKind::Hello,
+        ClientCommand::GetSnapshot => CommandKind::GetSnapshot,
+        ClientCommand::PairStart { .. } => CommandKind::PairStart,
+        ClientCommand::PairConfirm { .. } => CommandKind::PairConfirm,
+        ClientCommand::PairRevoke { .. } => CommandKind::PairRevoke,
+        ClientCommand::AppServerRequest { .. } => CommandKind::AppServerRequest,
+        ClientCommand::AppServerInterrupt { .. } => CommandKind::AppServerInterrupt,
+    }
+}
+
+fn should_retry_on_disconnect(kind: CommandKind) -> bool {
+    matches!(
+        kind,
+        CommandKind::Hello
+            | CommandKind::GetSnapshot
+            | CommandKind::AppServerRequest
+            | CommandKind::AppServerInterrupt
+    )
+}
+
+fn next_backoff_ms(current: u64) -> u64 {
+    if current == 0 {
+        INITIAL_RECONNECT_BACKOFF_MS
+    } else {
+        (current.saturating_mul(2)).min(MAX_RECONNECT_BACKOFF_MS)
+    }
+}
+
+fn now_millis() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 #[cfg(test)]
 mod tests {
     use codex_island_proto::{
         AppServerHealth, AppServerLifecycleState, AuthToken, EngineSnapshot, HostCapabilities,
         HostHealthSnapshot, HostHealthStatus, HostPlatform, PairedDeviceRecord, PairingSession,
-        PairingSessionStatus, ServerEvent, current_version,
+        PairingSessionStatus, ProtocolError, ServerEvent, current_version,
     };
     use serde_json::json;
 
-    use super::{ClientConnectionState, ClientRuntime};
+    use super::{ClientConnectionState, ClientRuntime, CommandKind};
 
     #[test]
     fn hello_command_carries_client_identity_and_token() {
@@ -283,6 +625,84 @@ mod tests {
                 "auth_token": "secret"
             })
         );
+    }
+
+    #[test]
+    fn request_connection_queues_single_hello() {
+        let mut runtime = ClientRuntime::new("codex-island-swift", "0.1.0", None);
+
+        runtime.request_connection();
+        runtime.request_connection();
+
+        assert_eq!(runtime.state().pending_commands.len(), 1);
+        assert_eq!(runtime.state().pending_commands[0].kind, CommandKind::Hello);
+        assert_eq!(runtime.state().diagnostics.connect_attempts, 2);
+    }
+
+    #[test]
+    fn pop_next_command_moves_it_to_inflight() {
+        let mut runtime = ClientRuntime::new("codex-island-swift", "0.1.0", None);
+        runtime.enqueue_get_snapshot();
+
+        let command = runtime.pop_next_command();
+
+        assert!(matches!(command, Some(codex_island_proto::ClientCommand::GetSnapshot)));
+        assert!(runtime.state().pending_commands.is_empty());
+        assert_eq!(
+            runtime.state().in_flight_command.as_ref().map(|command| command.kind),
+            Some(CommandKind::GetSnapshot)
+        );
+    }
+
+    #[test]
+    fn transport_disconnect_requeues_retryable_command_and_schedules_backoff() {
+        let mut runtime = ClientRuntime::new("codex-island-swift", "0.1.0", None);
+        runtime.request_connection();
+        let _ = runtime.pop_next_command();
+        runtime.enqueue_app_server_request("req-1", "thread/list", json!({}));
+
+        runtime.transport_disconnected(Some("socket EOF".into()));
+
+        assert!(runtime.state().reconnect.reconnect_pending);
+        assert_eq!(runtime.state().reconnect.next_backoff_ms, Some(1_000));
+        assert_eq!(runtime.state().pending_commands[0].kind, CommandKind::Hello);
+        assert_eq!(runtime.state().diagnostics.disconnect_count, 1);
+    }
+
+    #[test]
+    fn activate_reconnect_now_promotes_pending_reconnect_to_new_hello_attempt() {
+        let mut runtime = ClientRuntime::new("codex-island-swift", "0.1.0", None);
+        runtime.set_should_reconnect(true);
+        runtime.transport_disconnected(Some("network lost".into()));
+
+        let activated = runtime.activate_reconnect_now();
+
+        assert!(activated);
+        assert!(!runtime.state().reconnect.reconnect_pending);
+        assert_eq!(runtime.state().reconnect.attempt_count, 1);
+        assert_eq!(runtime.state().pending_commands[0].kind, CommandKind::Hello);
+    }
+
+    #[test]
+    fn hello_ack_resets_reconnect_state_and_marks_connection_connected() {
+        let mut runtime = ClientRuntime::new("codex-island-swift", "0.1.0", None);
+        runtime.request_connection();
+        let _ = runtime.pop_next_command();
+        runtime.transport_disconnected(Some("network lost".into()));
+        runtime.activate_reconnect_now();
+        let _ = runtime.pop_next_command();
+
+        runtime.apply_server_event(ServerEvent::HelloAck {
+            protocol_version: "v1".into(),
+            daemon_version: "0.1.0".into(),
+            host_id: "host-1".into(),
+            authenticated: true,
+        });
+
+        assert_eq!(runtime.state().connection, ClientConnectionState::Connected);
+        assert_eq!(runtime.state().reconnect.attempt_count, 0);
+        assert!(!runtime.state().reconnect.reconnect_pending);
+        assert_eq!(runtime.state().diagnostics.successful_connects, 1);
     }
 
     #[test]
@@ -316,6 +736,26 @@ mod tests {
         assert_eq!(runtime.state().auth_token.as_deref(), Some("bearer-1"));
         assert!(runtime.state().authenticated);
         assert_eq!(runtime.state().snapshot.paired_devices.len(), 1);
+    }
+
+    #[test]
+    fn error_event_tracks_diagnostics_and_clears_inflight() {
+        let mut runtime = ClientRuntime::new("codex-island-swift", "0.1.0", None);
+        runtime.request_connection();
+        let _ = runtime.pop_next_command();
+
+        runtime.apply_server_event(ServerEvent::Error {
+            error: ProtocolError {
+                code: codex_island_proto::ErrorCode::Unauthorized,
+                message: "bad token".into(),
+                retryable: Some(false),
+                details: None,
+            },
+        });
+
+        assert_eq!(runtime.state().connection, ClientConnectionState::Disconnected);
+        assert_eq!(runtime.state().diagnostics.auth_failures, 1);
+        assert!(runtime.state().in_flight_command.is_none());
     }
 
     fn sample_snapshot() -> EngineSnapshot {

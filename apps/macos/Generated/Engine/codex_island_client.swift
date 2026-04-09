@@ -449,6 +449,22 @@ fileprivate struct FfiConverterInt32: FfiConverterPrimitive {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterUInt64: FfiConverterPrimitive {
+    typealias FfiType = UInt64
+    typealias SwiftType = UInt64
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UInt64 {
+        return try lift(readInt(&buf))
+    }
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        writeInt(&buf, lower(value))
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterBool: FfiConverter {
     typealias FfiType = Int8
     typealias SwiftType = Bool
@@ -513,6 +529,8 @@ fileprivate struct FfiConverterString: FfiConverter {
 
 public protocol EngineRuntimeProtocol: AnyObject, Sendable {
 
+    func activateReconnectNow()  -> Bool
+
     func appServerInterruptCommandJson(threadId: String, turnId: String)  -> String
 
     func appServerRequestCommandJson(requestId: String, method: String, paramsJson: String) throws  -> String
@@ -527,6 +545,18 @@ public protocol EngineRuntimeProtocol: AnyObject, Sendable {
 
     func clientVersion()  -> String
 
+    func enqueueAppServerInterrupt(threadId: String, turnId: String)  -> UInt64
+
+    func enqueueAppServerRequest(requestId: String, method: String, paramsJson: String) throws  -> UInt64
+
+    func enqueueGetSnapshot()  -> UInt64
+
+    func enqueuePairConfirm(pairingCode: String, deviceName: String, clientPlatform: String)  -> UInt64
+
+    func enqueuePairRevoke(deviceId: String)  -> UInt64
+
+    func enqueuePairStart(deviceName: String, clientPlatform: String)  -> UInt64
+
     func getSnapshotCommandJson()  -> String
 
     func helloCommandJson()  -> String
@@ -537,9 +567,17 @@ public protocol EngineRuntimeProtocol: AnyObject, Sendable {
 
     func pairStartCommandJson(deviceName: String, clientPlatform: String)  -> String
 
+    func popNextCommandJson()  -> String?
+
     func replaceAuthToken(authToken: String?)
 
+    func requestConnection()  -> EngineRuntimeState
+
+    func setShouldReconnect(shouldReconnect: Bool)
+
     func state()  -> EngineRuntimeState
+
+    func transportDisconnected(reason: String?)  -> EngineRuntimeState
 
 }
 open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
@@ -598,6 +636,14 @@ open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
         }
 
         try! rustCall { uniffi_codex_island_client_ffi_fn_free_engineruntime(handle, $0) }
+    }
+
+    open func activateReconnectNow() -> Bool  {
+        return try!  FfiConverterBool.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_activate_reconnect_now(
+                self.uniffiCloneHandle(), $0
+            )
+        })
     }
 
     open func appServerInterruptCommandJson(threadId: String, turnId: String) -> String  {
@@ -662,6 +708,65 @@ open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
         })
     }
 
+    open func enqueueAppServerInterrupt(threadId: String, turnId: String) -> UInt64  {
+        return try!  FfiConverterUInt64.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_interrupt(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(threadId),
+                FfiConverterString.lower(turnId), $0
+            )
+        })
+    }
+
+    open func enqueueAppServerRequest(requestId: String, method: String, paramsJson: String) throws  -> UInt64  {
+        return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeClientRuntimeError_lift) {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_request(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(requestId),
+                FfiConverterString.lower(method),
+                FfiConverterString.lower(paramsJson), $0
+            )
+        })
+    }
+
+    open func enqueueGetSnapshot() -> UInt64  {
+        return try!  FfiConverterUInt64.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_get_snapshot(
+                self.uniffiCloneHandle(), $0
+            )
+        })
+    }
+
+    open func enqueuePairConfirm(pairingCode: String, deviceName: String, clientPlatform: String) -> UInt64  {
+        return try!  FfiConverterUInt64.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_confirm(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(pairingCode),
+                FfiConverterString.lower(deviceName),
+                FfiConverterString.lower(clientPlatform), $0
+            )
+        })
+    }
+
+    open func enqueuePairRevoke(deviceId: String) -> UInt64  {
+        return try!  FfiConverterUInt64.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_revoke(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(deviceId), $0
+            )
+        })
+    }
+
+    open func enqueuePairStart(deviceName: String, clientPlatform: String) -> UInt64  {
+        return try!  FfiConverterUInt64.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_start(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(deviceName),
+                FfiConverterString.lower(clientPlatform), $0
+            )
+        })
+    }
+
     open func getSnapshotCommandJson() -> String  {
         return try!  FfiConverterString.lift(try! rustCall() {
             uniffi_codex_island_client_ffi_fn_method_engineruntime_get_snapshot_command_json(
@@ -708,6 +813,14 @@ open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
         })
     }
 
+    open func popNextCommandJson() -> String?  {
+        return try!  FfiConverterOptionString.lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_pop_next_command_json(
+                self.uniffiCloneHandle(), $0
+            )
+        })
+    }
+
     open func replaceAuthToken(authToken: String?)  {try! rustCall() {
         uniffi_codex_island_client_ffi_fn_method_engineruntime_replace_auth_token(
             self.uniffiCloneHandle(),
@@ -716,10 +829,35 @@ open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
     }
     }
 
+    open func requestConnection() -> EngineRuntimeState  {
+        return try!  FfiConverterTypeEngineRuntimeState_lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_request_connection(
+                self.uniffiCloneHandle(), $0
+            )
+        })
+    }
+
+    open func setShouldReconnect(shouldReconnect: Bool)  {try! rustCall() {
+        uniffi_codex_island_client_ffi_fn_method_engineruntime_set_should_reconnect(
+            self.uniffiCloneHandle(),
+            FfiConverterBool.lower(shouldReconnect), $0
+        )
+    }
+    }
+
     open func state() -> EngineRuntimeState  {
         return try!  FfiConverterTypeEngineRuntimeState_lift(try! rustCall() {
             uniffi_codex_island_client_ffi_fn_method_engineruntime_state(
                 self.uniffiCloneHandle(), $0
+            )
+        })
+    }
+
+    open func transportDisconnected(reason: String?) -> EngineRuntimeState  {
+        return try!  FfiConverterTypeEngineRuntimeState_lift(try! rustCall() {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_transport_disconnected(
+                self.uniffiCloneHandle(),
+                FfiConverterOptionString.lower(reason), $0
             )
         })
     }
@@ -887,6 +1025,103 @@ public func FfiConverterTypeClientRuntimeConfig_lower(_ value: ClientRuntimeConf
     return FfiConverterTypeClientRuntimeConfig.lower(value)
 }
 
+public struct ConnectionDiagnosticsRecord: Equatable, Hashable {
+    public var connectAttempts: UInt32
+    public var successfulConnects: UInt32
+    public var disconnectCount: UInt32
+    public var authFailures: UInt32
+    public var protocolErrorCount: UInt32
+    public var transportErrorCount: UInt32
+    public var lastConnectRequestedAtMs: UInt64?
+    public var lastHelloSentAtMs: UInt64?
+    public var lastHelloAckAtMs: UInt64?
+    public var lastSnapshotAtMs: UInt64?
+    public var lastDisconnectAtMs: UInt64?
+    public var lastErrorAtMs: UInt64?
+    public var lastErrorMessage: String?
+    public var lastResponseRequestId: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(connectAttempts: UInt32, successfulConnects: UInt32, disconnectCount: UInt32, authFailures: UInt32, protocolErrorCount: UInt32, transportErrorCount: UInt32, lastConnectRequestedAtMs: UInt64?, lastHelloSentAtMs: UInt64?, lastHelloAckAtMs: UInt64?, lastSnapshotAtMs: UInt64?, lastDisconnectAtMs: UInt64?, lastErrorAtMs: UInt64?, lastErrorMessage: String?, lastResponseRequestId: String?) {
+        self.connectAttempts = connectAttempts
+        self.successfulConnects = successfulConnects
+        self.disconnectCount = disconnectCount
+        self.authFailures = authFailures
+        self.protocolErrorCount = protocolErrorCount
+        self.transportErrorCount = transportErrorCount
+        self.lastConnectRequestedAtMs = lastConnectRequestedAtMs
+        self.lastHelloSentAtMs = lastHelloSentAtMs
+        self.lastHelloAckAtMs = lastHelloAckAtMs
+        self.lastSnapshotAtMs = lastSnapshotAtMs
+        self.lastDisconnectAtMs = lastDisconnectAtMs
+        self.lastErrorAtMs = lastErrorAtMs
+        self.lastErrorMessage = lastErrorMessage
+        self.lastResponseRequestId = lastResponseRequestId
+    }
+
+}
+
+#if compiler(>=6)
+    extension ConnectionDiagnosticsRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeConnectionDiagnosticsRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ConnectionDiagnosticsRecord {
+        return
+            try ConnectionDiagnosticsRecord(
+                connectAttempts: FfiConverterUInt32.read(from: &buf),
+                successfulConnects: FfiConverterUInt32.read(from: &buf),
+                disconnectCount: FfiConverterUInt32.read(from: &buf),
+                authFailures: FfiConverterUInt32.read(from: &buf),
+                protocolErrorCount: FfiConverterUInt32.read(from: &buf),
+                transportErrorCount: FfiConverterUInt32.read(from: &buf),
+                lastConnectRequestedAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastHelloSentAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastHelloAckAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastSnapshotAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastDisconnectAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastErrorAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastErrorMessage: FfiConverterOptionString.read(from: &buf),
+                lastResponseRequestId: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ConnectionDiagnosticsRecord, into buf: inout [UInt8]) {
+        FfiConverterUInt32.write(value.connectAttempts, into: &buf)
+        FfiConverterUInt32.write(value.successfulConnects, into: &buf)
+        FfiConverterUInt32.write(value.disconnectCount, into: &buf)
+        FfiConverterUInt32.write(value.authFailures, into: &buf)
+        FfiConverterUInt32.write(value.protocolErrorCount, into: &buf)
+        FfiConverterUInt32.write(value.transportErrorCount, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastConnectRequestedAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastHelloSentAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastHelloAckAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastSnapshotAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastDisconnectAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastErrorAtMs, into: &buf)
+        FfiConverterOptionString.write(value.lastErrorMessage, into: &buf)
+        FfiConverterOptionString.write(value.lastResponseRequestId, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConnectionDiagnosticsRecord_lift(_ buf: RustBuffer) throws -> ConnectionDiagnosticsRecord {
+    return try FfiConverterTypeConnectionDiagnosticsRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeConnectionDiagnosticsRecord_lower(_ value: ConnectionDiagnosticsRecord) -> RustBuffer {
+    return FfiConverterTypeConnectionDiagnosticsRecord.lower(value)
+}
+
 public struct EngineRuntimeState: Equatable, Hashable {
     public var connection: ClientConnectionState
     public var snapshot: EngineSnapshotRecord
@@ -894,16 +1129,24 @@ public struct EngineRuntimeState: Equatable, Hashable {
     public var lastAppServerEventJson: String?
     public var authenticated: Bool
     public var authToken: String?
+    public var pendingCommands: [QueuedCommandRecord]
+    public var inFlightCommand: QueuedCommandRecord?
+    public var reconnect: ReconnectStateRecord
+    public var diagnostics: ConnectionDiagnosticsRecord
 
     // Default memberwise initializers are never public by default, so we
     // declare one manually.
-    public init(connection: ClientConnectionState, snapshot: EngineSnapshotRecord, lastError: ProtocolError?, lastAppServerEventJson: String?, authenticated: Bool, authToken: String?) {
+    public init(connection: ClientConnectionState, snapshot: EngineSnapshotRecord, lastError: ProtocolError?, lastAppServerEventJson: String?, authenticated: Bool, authToken: String?, pendingCommands: [QueuedCommandRecord], inFlightCommand: QueuedCommandRecord?, reconnect: ReconnectStateRecord, diagnostics: ConnectionDiagnosticsRecord) {
         self.connection = connection
         self.snapshot = snapshot
         self.lastError = lastError
         self.lastAppServerEventJson = lastAppServerEventJson
         self.authenticated = authenticated
         self.authToken = authToken
+        self.pendingCommands = pendingCommands
+        self.inFlightCommand = inFlightCommand
+        self.reconnect = reconnect
+        self.diagnostics = diagnostics
     }
 
 }
@@ -924,7 +1167,11 @@ public struct FfiConverterTypeEngineRuntimeState: FfiConverterRustBuffer {
                 lastError: FfiConverterOptionTypeProtocolError.read(from: &buf),
                 lastAppServerEventJson: FfiConverterOptionString.read(from: &buf),
                 authenticated: FfiConverterBool.read(from: &buf),
-                authToken: FfiConverterOptionString.read(from: &buf)
+                authToken: FfiConverterOptionString.read(from: &buf),
+                pendingCommands: FfiConverterSequenceTypeQueuedCommandRecord.read(from: &buf),
+                inFlightCommand: FfiConverterOptionTypeQueuedCommandRecord.read(from: &buf),
+                reconnect: FfiConverterTypeReconnectStateRecord.read(from: &buf),
+                diagnostics: FfiConverterTypeConnectionDiagnosticsRecord.read(from: &buf)
             )
     }
 
@@ -935,6 +1182,10 @@ public struct FfiConverterTypeEngineRuntimeState: FfiConverterRustBuffer {
         FfiConverterOptionString.write(value.lastAppServerEventJson, into: &buf)
         FfiConverterBool.write(value.authenticated, into: &buf)
         FfiConverterOptionString.write(value.authToken, into: &buf)
+        FfiConverterSequenceTypeQueuedCommandRecord.write(value.pendingCommands, into: &buf)
+        FfiConverterOptionTypeQueuedCommandRecord.write(value.inFlightCommand, into: &buf)
+        FfiConverterTypeReconnectStateRecord.write(value.reconnect, into: &buf)
+        FfiConverterTypeConnectionDiagnosticsRecord.write(value.diagnostics, into: &buf)
     }
 }
 
@@ -1338,6 +1589,144 @@ public func FfiConverterTypeProtocolError_lower(_ value: ProtocolError) -> RustB
     return FfiConverterTypeProtocolError.lower(value)
 }
 
+public struct QueuedCommandRecord: Equatable, Hashable {
+    public var queueId: UInt64
+    public var kind: CommandKind
+    public var commandJson: String
+    public var enqueuedAtMs: UInt64
+    public var lastSentAtMs: UInt64?
+    public var attemptCount: UInt32
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(queueId: UInt64, kind: CommandKind, commandJson: String, enqueuedAtMs: UInt64, lastSentAtMs: UInt64?, attemptCount: UInt32) {
+        self.queueId = queueId
+        self.kind = kind
+        self.commandJson = commandJson
+        self.enqueuedAtMs = enqueuedAtMs
+        self.lastSentAtMs = lastSentAtMs
+        self.attemptCount = attemptCount
+    }
+
+}
+
+#if compiler(>=6)
+    extension QueuedCommandRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeQueuedCommandRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> QueuedCommandRecord {
+        return
+            try QueuedCommandRecord(
+                queueId: FfiConverterUInt64.read(from: &buf),
+                kind: FfiConverterTypeCommandKind.read(from: &buf),
+                commandJson: FfiConverterString.read(from: &buf),
+                enqueuedAtMs: FfiConverterUInt64.read(from: &buf),
+                lastSentAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                attemptCount: FfiConverterUInt32.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: QueuedCommandRecord, into buf: inout [UInt8]) {
+        FfiConverterUInt64.write(value.queueId, into: &buf)
+        FfiConverterTypeCommandKind.write(value.kind, into: &buf)
+        FfiConverterString.write(value.commandJson, into: &buf)
+        FfiConverterUInt64.write(value.enqueuedAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastSentAtMs, into: &buf)
+        FfiConverterUInt32.write(value.attemptCount, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQueuedCommandRecord_lift(_ buf: RustBuffer) throws -> QueuedCommandRecord {
+    return try FfiConverterTypeQueuedCommandRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeQueuedCommandRecord_lower(_ value: QueuedCommandRecord) -> RustBuffer {
+    return FfiConverterTypeQueuedCommandRecord.lower(value)
+}
+
+public struct ReconnectStateRecord: Equatable, Hashable {
+    public var shouldReconnect: Bool
+    public var reconnectPending: Bool
+    public var attemptCount: UInt32
+    public var currentBackoffMs: UInt64
+    public var nextBackoffMs: UInt64?
+    public var lastScheduledAtMs: UInt64?
+    public var lastReconnectedAtMs: UInt64?
+    public var lastDisconnectReason: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(shouldReconnect: Bool, reconnectPending: Bool, attemptCount: UInt32, currentBackoffMs: UInt64, nextBackoffMs: UInt64?, lastScheduledAtMs: UInt64?, lastReconnectedAtMs: UInt64?, lastDisconnectReason: String?) {
+        self.shouldReconnect = shouldReconnect
+        self.reconnectPending = reconnectPending
+        self.attemptCount = attemptCount
+        self.currentBackoffMs = currentBackoffMs
+        self.nextBackoffMs = nextBackoffMs
+        self.lastScheduledAtMs = lastScheduledAtMs
+        self.lastReconnectedAtMs = lastReconnectedAtMs
+        self.lastDisconnectReason = lastDisconnectReason
+    }
+
+}
+
+#if compiler(>=6)
+    extension ReconnectStateRecord: Sendable {}
+#endif
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeReconnectStateRecord: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> ReconnectStateRecord {
+        return
+            try ReconnectStateRecord(
+                shouldReconnect: FfiConverterBool.read(from: &buf),
+                reconnectPending: FfiConverterBool.read(from: &buf),
+                attemptCount: FfiConverterUInt32.read(from: &buf),
+                currentBackoffMs: FfiConverterUInt64.read(from: &buf),
+                nextBackoffMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastScheduledAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastReconnectedAtMs: FfiConverterOptionUInt64.read(from: &buf),
+                lastDisconnectReason: FfiConverterOptionString.read(from: &buf)
+            )
+    }
+
+    public static func write(_ value: ReconnectStateRecord, into buf: inout [UInt8]) {
+        FfiConverterBool.write(value.shouldReconnect, into: &buf)
+        FfiConverterBool.write(value.reconnectPending, into: &buf)
+        FfiConverterUInt32.write(value.attemptCount, into: &buf)
+        FfiConverterUInt64.write(value.currentBackoffMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.nextBackoffMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastScheduledAtMs, into: &buf)
+        FfiConverterOptionUInt64.write(value.lastReconnectedAtMs, into: &buf)
+        FfiConverterOptionString.write(value.lastDisconnectReason, into: &buf)
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReconnectStateRecord_lift(_ buf: RustBuffer) throws -> ReconnectStateRecord {
+    return try FfiConverterTypeReconnectStateRecord.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeReconnectStateRecord_lower(_ value: ReconnectStateRecord) -> RustBuffer {
+    return FfiConverterTypeReconnectStateRecord.lower(value)
+}
+
 // Note that we don't yet support `indirect` for enums.
 // See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
 
@@ -1551,6 +1940,95 @@ public func FfiConverterTypeClientRuntimeError_lift(_ buf: RustBuffer) throws ->
 #endif
 public func FfiConverterTypeClientRuntimeError_lower(_ value: ClientRuntimeError) -> RustBuffer {
     return FfiConverterTypeClientRuntimeError.lower(value)
+}
+
+// Note that we don't yet support `indirect` for enums.
+// See https://github.com/mozilla/uniffi-rs/issues/396 for further discussion.
+
+public enum CommandKind: Equatable, Hashable {
+
+    case hello
+    case getSnapshot
+    case pairStart
+    case pairConfirm
+    case pairRevoke
+    case appServerRequest
+    case appServerInterrupt
+
+}
+
+#if compiler(>=6)
+    extension CommandKind: Sendable {}
+#endif
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeCommandKind: FfiConverterRustBuffer {
+    typealias SwiftType = CommandKind
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> CommandKind {
+        let variant: Int32 = try readInt(&buf)
+        switch variant {
+
+        case 1: return .hello
+
+        case 2: return .getSnapshot
+
+        case 3: return .pairStart
+
+        case 4: return .pairConfirm
+
+        case 5: return .pairRevoke
+
+        case 6: return .appServerRequest
+
+        case 7: return .appServerInterrupt
+
+        default: throw UniffiInternalError.unexpectedEnumCase
+        }
+    }
+
+    public static func write(_ value: CommandKind, into buf: inout [UInt8]) {
+        switch value {
+
+        case .hello:
+            writeInt(&buf, Int32(1))
+
+        case .getSnapshot:
+            writeInt(&buf, Int32(2))
+
+        case .pairStart:
+            writeInt(&buf, Int32(3))
+
+        case .pairConfirm:
+            writeInt(&buf, Int32(4))
+
+        case .pairRevoke:
+            writeInt(&buf, Int32(5))
+
+        case .appServerRequest:
+            writeInt(&buf, Int32(6))
+
+        case .appServerInterrupt:
+            writeInt(&buf, Int32(7))
+
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCommandKind_lift(_ buf: RustBuffer) throws -> CommandKind {
+    return try FfiConverterTypeCommandKind.lift(buf)
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+public func FfiConverterTypeCommandKind_lower(_ value: CommandKind) -> RustBuffer {
+    return FfiConverterTypeCommandKind.lower(value)
 }
 
 // Note that we don't yet support `indirect` for enums.
@@ -1906,6 +2384,30 @@ fileprivate struct FfiConverterOptionInt32: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionUInt64: FfiConverterRustBuffer {
+    typealias SwiftType = UInt64?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterUInt64.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterUInt64.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterOptionBool: FfiConverterRustBuffer {
     typealias SwiftType = Bool?
 
@@ -2002,6 +2504,30 @@ fileprivate struct FfiConverterOptionTypeProtocolError: FfiConverterRustBuffer {
 #if swift(>=5.8)
     @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterOptionTypeQueuedCommandRecord: FfiConverterRustBuffer {
+    typealias SwiftType = QueuedCommandRecord?
+
+    public static func write(_ value: SwiftType, into buf: inout [UInt8]) {
+        guard let value = value else {
+            writeInt(&buf, Int8(0))
+            return
+        }
+        writeInt(&buf, Int8(1))
+        FfiConverterTypeQueuedCommandRecord.write(value, into: &buf)
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> SwiftType {
+        switch try readInt(&buf) as Int8 {
+        case 0: return nil
+        case 1: return try FfiConverterTypeQueuedCommandRecord.read(from: &buf)
+        default: throw UniffiInternalError.unexpectedOptionalTag
+        }
+    }
+}
+
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
     typealias SwiftType = [String]
 
@@ -2049,6 +2575,31 @@ fileprivate struct FfiConverterSequenceTypePairedDeviceRecord: FfiConverterRustB
     }
 }
 
+#if swift(>=5.8)
+    @_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeQueuedCommandRecord: FfiConverterRustBuffer {
+    typealias SwiftType = [QueuedCommandRecord]
+
+    public static func write(_ value: [QueuedCommandRecord], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeQueuedCommandRecord.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [QueuedCommandRecord] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [QueuedCommandRecord]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeQueuedCommandRecord.read(from: &buf))
+        }
+        return seq
+    }
+}
+
 private enum InitializationResult {
     case ok
     case contractVersionMismatch
@@ -2063,6 +2614,9 @@ private let initializationResult: InitializationResult = {
     let scaffolding_contract_version = ffi_codex_island_client_ffi_uniffi_contract_version()
     if bindings_contract_version != scaffolding_contract_version {
         return InitializationResult.contractVersionMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_activate_reconnect_now() != 16419) {
+        return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_interrupt_command_json() != 27566) {
         return InitializationResult.apiChecksumMismatch
@@ -2085,6 +2639,24 @@ private let initializationResult: InitializationResult = {
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_client_version() != 64187) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_interrupt() != 26240) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_request() != 11717) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_get_snapshot() != 19711) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_confirm() != 34158) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_revoke() != 61976) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_start() != 64208) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_get_snapshot_command_json() != 37718) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2100,10 +2672,22 @@ private let initializationResult: InitializationResult = {
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_pair_start_command_json() != 3900) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_pop_next_command_json() != 49609) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_replace_auth_token() != 30037) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_request_connection() != 33963) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_set_should_reconnect() != 46316) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_state() != 34569) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_transport_disconnected() != 37044) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_codex_island_client_ffi_checksum_constructor_engineruntime_new() != 16139) {

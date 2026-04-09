@@ -636,6 +636,8 @@ internal object IntegrityCheckingUniffiLib {
         uniffiCheckContractApiVersion(this)
         uniffiCheckApiChecksums(this)
     }
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_activate_reconnect_now(
+    ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_interrupt_command_json(
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_request_command_json(
@@ -650,6 +652,18 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_client_version(
     ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_interrupt(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_request(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_get_snapshot(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_confirm(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_revoke(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_start(
+    ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_get_snapshot_command_json(
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_hello_command_json(
@@ -660,9 +674,17 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_pair_start_command_json(
     ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_pop_next_command_json(
+    ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_replace_auth_token(
     ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_request_connection(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_set_should_reconnect(
+    ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_state(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_transport_disconnected(
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_constructor_engineruntime_new(
     ): Short
@@ -685,145 +707,167 @@ internal object UniffiLib {
         
     }
     external fun uniffi_codex_island_client_ffi_fn_clone_engineruntime(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Long
-    external fun uniffi_codex_island_client_ffi_fn_free_engineruntime(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
-    external fun uniffi_codex_island_client_ffi_fn_constructor_engineruntime_new(`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Long
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_interrupt_command_json(`ptr`: Long,`threadId`: RustBuffer.ByValue,`turnId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_request_command_json(`ptr`: Long,`requestId`: RustBuffer.ByValue,`method`: RustBuffer.ByValue,`paramsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_apply_server_event_json(`ptr`: Long,`eventJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_auth_token(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_binding_surface_version(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_client_name(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_client_version(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_get_snapshot_command_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_hello_command_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pair_confirm_command_json(`ptr`: Long,`pairingCode`: RustBuffer.ByValue,`deviceName`: RustBuffer.ByValue,`clientPlatform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pair_revoke_command_json(`ptr`: Long,`deviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pair_start_command_json(`ptr`: Long,`deviceName`: RustBuffer.ByValue,`clientPlatform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_replace_auth_token(`ptr`: Long,`authToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
-    external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_state(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun ffi_codex_island_client_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun ffi_codex_island_client_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun ffi_codex_island_client_ffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun ffi_codex_island_client_ffi_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_u8(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_u8(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Byte
-    external fun ffi_codex_island_client_ffi_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_i8(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_i8(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Byte
-    external fun ffi_codex_island_client_ffi_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_u16(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_u16(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Short
-    external fun ffi_codex_island_client_ffi_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_i16(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_i16(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Short
-    external fun ffi_codex_island_client_ffi_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_u32(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_u32(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Int
-    external fun ffi_codex_island_client_ffi_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_i32(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_i32(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Int
-    external fun ffi_codex_island_client_ffi_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_u64(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_u64(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Long
-    external fun ffi_codex_island_client_ffi_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_i64(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_i64(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Long
-    external fun ffi_codex_island_client_ffi_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_f32(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_f32(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Float
-    external fun ffi_codex_island_client_ffi_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_f64(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_f64(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Double
-    external fun ffi_codex_island_client_ffi_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_rust_buffer(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_rust_buffer(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): RustBuffer.ByValue
-    external fun ffi_codex_island_client_ffi_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_cancel_void(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_free_void(`handle`: Long,
-    ): Unit
-    external fun ffi_codex_island_client_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
-    ): Unit
+): Long
+external fun uniffi_codex_island_client_ffi_fn_free_engineruntime(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_codex_island_client_ffi_fn_constructor_engineruntime_new(`config`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_activate_reconnect_now(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_interrupt_command_json(`ptr`: Long,`threadId`: RustBuffer.ByValue,`turnId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_request_command_json(`ptr`: Long,`requestId`: RustBuffer.ByValue,`method`: RustBuffer.ByValue,`paramsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_apply_server_event_json(`ptr`: Long,`eventJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_auth_token(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_binding_surface_version(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_client_name(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_client_version(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_interrupt(`ptr`: Long,`threadId`: RustBuffer.ByValue,`turnId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_request(`ptr`: Long,`requestId`: RustBuffer.ByValue,`method`: RustBuffer.ByValue,`paramsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_get_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_confirm(`ptr`: Long,`pairingCode`: RustBuffer.ByValue,`deviceName`: RustBuffer.ByValue,`clientPlatform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_revoke(`ptr`: Long,`deviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_start(`ptr`: Long,`deviceName`: RustBuffer.ByValue,`clientPlatform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_get_snapshot_command_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_hello_command_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pair_confirm_command_json(`ptr`: Long,`pairingCode`: RustBuffer.ByValue,`deviceName`: RustBuffer.ByValue,`clientPlatform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pair_revoke_command_json(`ptr`: Long,`deviceId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pair_start_command_json(`ptr`: Long,`deviceName`: RustBuffer.ByValue,`clientPlatform`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_pop_next_command_json(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_replace_auth_token(`ptr`: Long,`authToken`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_request_connection(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_set_should_reconnect(`ptr`: Long,`shouldReconnect`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_state(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_transport_disconnected(`ptr`: Long,`reason`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun ffi_codex_island_client_ffi_rustbuffer_alloc(`size`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun ffi_codex_island_client_ffi_rustbuffer_from_bytes(`bytes`: ForeignBytes.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun ffi_codex_island_client_ffi_rustbuffer_free(`buf`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
+external fun ffi_codex_island_client_ffi_rustbuffer_reserve(`buf`: RustBuffer.ByValue,`additional`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun ffi_codex_island_client_ffi_rust_future_poll_u8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_u8(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_u8(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_u8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+external fun ffi_codex_island_client_ffi_rust_future_poll_i8(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_i8(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_i8(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_i8(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Byte
+external fun ffi_codex_island_client_ffi_rust_future_poll_u16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_u16(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_u16(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_u16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Short
+external fun ffi_codex_island_client_ffi_rust_future_poll_i16(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_i16(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_i16(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_i16(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Short
+external fun ffi_codex_island_client_ffi_rust_future_poll_u32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_u32(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_u32(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_u32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Int
+external fun ffi_codex_island_client_ffi_rust_future_poll_i32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_i32(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_i32(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_i32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Int
+external fun ffi_codex_island_client_ffi_rust_future_poll_u64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_u64(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_u64(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_u64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun ffi_codex_island_client_ffi_rust_future_poll_i64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_i64(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_i64(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_i64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun ffi_codex_island_client_ffi_rust_future_poll_f32(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_f32(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_f32(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_f32(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Float
+external fun ffi_codex_island_client_ffi_rust_future_poll_f64(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_f64(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_f64(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_f64(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Double
+external fun ffi_codex_island_client_ffi_rust_future_poll_rust_buffer(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_rust_buffer(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_rust_buffer(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_rust_buffer(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
+external fun ffi_codex_island_client_ffi_rust_future_poll_void(`handle`: Long,`callback`: UniffiRustFutureContinuationCallback,`callbackData`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_cancel_void(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_free_void(`handle`: Long,
+): Unit
+external fun ffi_codex_island_client_ffi_rust_future_complete_void(`handle`: Long,uniffi_out_err: UniffiRustCallStatus, 
+): Unit
 
-        
+    
 }
 
 private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
@@ -837,6 +881,9 @@ private fun uniffiCheckContractApiVersion(lib: IntegrityCheckingUniffiLib) {
 }
 @Suppress("UNUSED_PARAMETER")
 private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_activate_reconnect_now() != 16419.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_interrupt_command_json() != 27566.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -858,6 +905,24 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_client_version() != 64187.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_interrupt() != 26240.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_request() != 11717.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_get_snapshot() != 19711.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_confirm() != 34158.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_revoke() != 61976.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_pair_start() != 64208.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_get_snapshot_command_json() != 37718.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -873,10 +938,22 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_pair_start_command_json() != 3900.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_pop_next_command_json() != 49609.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_replace_auth_token() != 30037.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_request_connection() != 33963.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_set_should_reconnect() != 46316.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_state() != 34569.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_transport_disconnected() != 37044.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_codex_island_client_ffi_checksum_constructor_engineruntime_new() != 16139.toShort()) {
@@ -1088,6 +1165,29 @@ public object FfiConverterInt: FfiConverter<Int, Int> {
 /**
  * @suppress
  */
+public object FfiConverterULong: FfiConverter<ULong, Long> {
+    override fun lift(value: Long): ULong {
+        return value.toULong()
+    }
+
+    override fun read(buf: ByteBuffer): ULong {
+        return lift(buf.getLong())
+    }
+
+    override fun lower(value: ULong): Long {
+        return value.toLong()
+    }
+
+    override fun allocationSize(value: ULong) = 8UL
+
+    override fun write(value: ULong, buf: ByteBuffer) {
+        buf.putLong(value.toLong())
+    }
+}
+
+/**
+ * @suppress
+ */
 public object FfiConverterBoolean: FfiConverter<Boolean, Byte> {
     override fun lift(value: Byte): Boolean {
         return value.toInt() != 0
@@ -1263,6 +1363,8 @@ public object FfiConverterString: FfiConverter<String, RustBuffer.ByValue> {
 
 public interface EngineRuntimeInterface {
     
+    fun `activateReconnectNow`(): kotlin.Boolean
+    
     fun `appServerInterruptCommandJson`(`threadId`: kotlin.String, `turnId`: kotlin.String): kotlin.String
     
     fun `appServerRequestCommandJson`(`requestId`: kotlin.String, `method`: kotlin.String, `paramsJson`: kotlin.String): kotlin.String
@@ -1277,6 +1379,18 @@ public interface EngineRuntimeInterface {
     
     fun `clientVersion`(): kotlin.String
     
+    fun `enqueueAppServerInterrupt`(`threadId`: kotlin.String, `turnId`: kotlin.String): kotlin.ULong
+    
+    fun `enqueueAppServerRequest`(`requestId`: kotlin.String, `method`: kotlin.String, `paramsJson`: kotlin.String): kotlin.ULong
+    
+    fun `enqueueGetSnapshot`(): kotlin.ULong
+    
+    fun `enqueuePairConfirm`(`pairingCode`: kotlin.String, `deviceName`: kotlin.String, `clientPlatform`: kotlin.String): kotlin.ULong
+    
+    fun `enqueuePairRevoke`(`deviceId`: kotlin.String): kotlin.ULong
+    
+    fun `enqueuePairStart`(`deviceName`: kotlin.String, `clientPlatform`: kotlin.String): kotlin.ULong
+    
     fun `getSnapshotCommandJson`(): kotlin.String
     
     fun `helloCommandJson`(): kotlin.String
@@ -1287,9 +1401,17 @@ public interface EngineRuntimeInterface {
     
     fun `pairStartCommandJson`(`deviceName`: kotlin.String, `clientPlatform`: kotlin.String): kotlin.String
     
+    fun `popNextCommandJson`(): kotlin.String?
+    
     fun `replaceAuthToken`(`authToken`: kotlin.String?)
     
+    fun `requestConnection`(): EngineRuntimeState
+    
+    fun `setShouldReconnect`(`shouldReconnect`: kotlin.Boolean)
+    
     fun `state`(): EngineRuntimeState
+    
+    fun `transportDisconnected`(`reason`: kotlin.String?): EngineRuntimeState
     
     companion object
 }
@@ -1398,6 +1520,19 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
         }
     }
 
+    override fun `activateReconnectNow`(): kotlin.Boolean {
+            return FfiConverterBoolean.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_activate_reconnect_now(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
     override fun `appServerInterruptCommandJson`(`threadId`: kotlin.String, `turnId`: kotlin.String): kotlin.String {
             return FfiConverterString.lift(
     callWithHandle {
@@ -1491,6 +1626,85 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
     }
     
 
+    override fun `enqueueAppServerInterrupt`(`threadId`: kotlin.String, `turnId`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_interrupt(
+        it,
+        FfiConverterString.lower(`threadId`),FfiConverterString.lower(`turnId`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ClientRuntimeException::class)override fun `enqueueAppServerRequest`(`requestId`: kotlin.String, `method`: kotlin.String, `paramsJson`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCallWithError(ClientRuntimeException) { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_request(
+        it,
+        FfiConverterString.lower(`requestId`),FfiConverterString.lower(`method`),FfiConverterString.lower(`paramsJson`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `enqueueGetSnapshot`(): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_get_snapshot(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `enqueuePairConfirm`(`pairingCode`: kotlin.String, `deviceName`: kotlin.String, `clientPlatform`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_confirm(
+        it,
+        FfiConverterString.lower(`pairingCode`),FfiConverterString.lower(`deviceName`),FfiConverterString.lower(`clientPlatform`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `enqueuePairRevoke`(`deviceId`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_revoke(
+        it,
+        FfiConverterString.lower(`deviceId`),_status)
+}
+    }
+    )
+    }
+    
+
+    override fun `enqueuePairStart`(`deviceName`: kotlin.String, `clientPlatform`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_pair_start(
+        it,
+        FfiConverterString.lower(`deviceName`),FfiConverterString.lower(`clientPlatform`),_status)
+}
+    }
+    )
+    }
+    
+
     override fun `getSnapshotCommandJson`(): kotlin.String {
             return FfiConverterString.lift(
     callWithHandle {
@@ -1556,6 +1770,19 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
     }
     
 
+    override fun `popNextCommandJson`(): kotlin.String? {
+            return FfiConverterOptionalString.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_pop_next_command_json(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
     override fun `replaceAuthToken`(`authToken`: kotlin.String?)
         = 
     callWithHandle {
@@ -1568,6 +1795,31 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
     
     
 
+    override fun `requestConnection`(): EngineRuntimeState {
+            return FfiConverterTypeEngineRuntimeState.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_request_connection(
+        it,
+        _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `setShouldReconnect`(`shouldReconnect`: kotlin.Boolean)
+        = 
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_set_should_reconnect(
+        it,
+        FfiConverterBoolean.lower(`shouldReconnect`),_status)
+}
+    }
+    
+    
+
     override fun `state`(): EngineRuntimeState {
             return FfiConverterTypeEngineRuntimeState.lift(
     callWithHandle {
@@ -1575,6 +1827,19 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
     UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_state(
         it,
         _status)
+}
+    }
+    )
+    }
+    
+
+    override fun `transportDisconnected`(`reason`: kotlin.String?): EngineRuntimeState {
+            return FfiConverterTypeEngineRuntimeState.lift(
+    callWithHandle {
+    uniffiRustCall() { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_transport_disconnected(
+        it,
+        FfiConverterOptionalString.lower(`reason`),_status)
 }
     }
     )
@@ -1727,6 +1992,104 @@ public object FfiConverterTypeClientRuntimeConfig: FfiConverterRustBuffer<Client
 
 
 
+data class ConnectionDiagnosticsRecord (
+    var `connectAttempts`: kotlin.UInt
+    , 
+    var `successfulConnects`: kotlin.UInt
+    , 
+    var `disconnectCount`: kotlin.UInt
+    , 
+    var `authFailures`: kotlin.UInt
+    , 
+    var `protocolErrorCount`: kotlin.UInt
+    , 
+    var `transportErrorCount`: kotlin.UInt
+    , 
+    var `lastConnectRequestedAtMs`: kotlin.ULong?
+    , 
+    var `lastHelloSentAtMs`: kotlin.ULong?
+    , 
+    var `lastHelloAckAtMs`: kotlin.ULong?
+    , 
+    var `lastSnapshotAtMs`: kotlin.ULong?
+    , 
+    var `lastDisconnectAtMs`: kotlin.ULong?
+    , 
+    var `lastErrorAtMs`: kotlin.ULong?
+    , 
+    var `lastErrorMessage`: kotlin.String?
+    , 
+    var `lastResponseRequestId`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeConnectionDiagnosticsRecord: FfiConverterRustBuffer<ConnectionDiagnosticsRecord> {
+    override fun read(buf: ByteBuffer): ConnectionDiagnosticsRecord {
+        return ConnectionDiagnosticsRecord(
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ConnectionDiagnosticsRecord) = (
+            FfiConverterUInt.allocationSize(value.`connectAttempts`) +
+            FfiConverterUInt.allocationSize(value.`successfulConnects`) +
+            FfiConverterUInt.allocationSize(value.`disconnectCount`) +
+            FfiConverterUInt.allocationSize(value.`authFailures`) +
+            FfiConverterUInt.allocationSize(value.`protocolErrorCount`) +
+            FfiConverterUInt.allocationSize(value.`transportErrorCount`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastConnectRequestedAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastHelloSentAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastHelloAckAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastSnapshotAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastDisconnectAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastErrorAtMs`) +
+            FfiConverterOptionalString.allocationSize(value.`lastErrorMessage`) +
+            FfiConverterOptionalString.allocationSize(value.`lastResponseRequestId`)
+    )
+
+    override fun write(value: ConnectionDiagnosticsRecord, buf: ByteBuffer) {
+            FfiConverterUInt.write(value.`connectAttempts`, buf)
+            FfiConverterUInt.write(value.`successfulConnects`, buf)
+            FfiConverterUInt.write(value.`disconnectCount`, buf)
+            FfiConverterUInt.write(value.`authFailures`, buf)
+            FfiConverterUInt.write(value.`protocolErrorCount`, buf)
+            FfiConverterUInt.write(value.`transportErrorCount`, buf)
+            FfiConverterOptionalULong.write(value.`lastConnectRequestedAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastHelloSentAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastHelloAckAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastSnapshotAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastDisconnectAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastErrorAtMs`, buf)
+            FfiConverterOptionalString.write(value.`lastErrorMessage`, buf)
+            FfiConverterOptionalString.write(value.`lastResponseRequestId`, buf)
+    }
+}
+
+
+
 data class EngineRuntimeState (
     var `connection`: ClientConnectionState
     , 
@@ -1739,6 +2102,14 @@ data class EngineRuntimeState (
     var `authenticated`: kotlin.Boolean
     , 
     var `authToken`: kotlin.String?
+    , 
+    var `pendingCommands`: List<QueuedCommandRecord>
+    , 
+    var `inFlightCommand`: QueuedCommandRecord?
+    , 
+    var `reconnect`: ReconnectStateRecord
+    , 
+    var `diagnostics`: ConnectionDiagnosticsRecord
     
 ){
     
@@ -1761,6 +2132,10 @@ public object FfiConverterTypeEngineRuntimeState: FfiConverterRustBuffer<EngineR
             FfiConverterOptionalString.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterOptionalString.read(buf),
+            FfiConverterSequenceTypeQueuedCommandRecord.read(buf),
+            FfiConverterOptionalTypeQueuedCommandRecord.read(buf),
+            FfiConverterTypeReconnectStateRecord.read(buf),
+            FfiConverterTypeConnectionDiagnosticsRecord.read(buf),
         )
     }
 
@@ -1770,7 +2145,11 @@ public object FfiConverterTypeEngineRuntimeState: FfiConverterRustBuffer<EngineR
             FfiConverterOptionalTypeProtocolError.allocationSize(value.`lastError`) +
             FfiConverterOptionalString.allocationSize(value.`lastAppServerEventJson`) +
             FfiConverterBoolean.allocationSize(value.`authenticated`) +
-            FfiConverterOptionalString.allocationSize(value.`authToken`)
+            FfiConverterOptionalString.allocationSize(value.`authToken`) +
+            FfiConverterSequenceTypeQueuedCommandRecord.allocationSize(value.`pendingCommands`) +
+            FfiConverterOptionalTypeQueuedCommandRecord.allocationSize(value.`inFlightCommand`) +
+            FfiConverterTypeReconnectStateRecord.allocationSize(value.`reconnect`) +
+            FfiConverterTypeConnectionDiagnosticsRecord.allocationSize(value.`diagnostics`)
     )
 
     override fun write(value: EngineRuntimeState, buf: ByteBuffer) {
@@ -1780,6 +2159,10 @@ public object FfiConverterTypeEngineRuntimeState: FfiConverterRustBuffer<EngineR
             FfiConverterOptionalString.write(value.`lastAppServerEventJson`, buf)
             FfiConverterBoolean.write(value.`authenticated`, buf)
             FfiConverterOptionalString.write(value.`authToken`, buf)
+            FfiConverterSequenceTypeQueuedCommandRecord.write(value.`pendingCommands`, buf)
+            FfiConverterOptionalTypeQueuedCommandRecord.write(value.`inFlightCommand`, buf)
+            FfiConverterTypeReconnectStateRecord.write(value.`reconnect`, buf)
+            FfiConverterTypeConnectionDiagnosticsRecord.write(value.`diagnostics`, buf)
     }
 }
 
@@ -2128,6 +2511,132 @@ public object FfiConverterTypeProtocolError: FfiConverterRustBuffer<ProtocolErro
 
 
 
+data class QueuedCommandRecord (
+    var `queueId`: kotlin.ULong
+    , 
+    var `kind`: CommandKind
+    , 
+    var `commandJson`: kotlin.String
+    , 
+    var `enqueuedAtMs`: kotlin.ULong
+    , 
+    var `lastSentAtMs`: kotlin.ULong?
+    , 
+    var `attemptCount`: kotlin.UInt
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeQueuedCommandRecord: FfiConverterRustBuffer<QueuedCommandRecord> {
+    override fun read(buf: ByteBuffer): QueuedCommandRecord {
+        return QueuedCommandRecord(
+            FfiConverterULong.read(buf),
+            FfiConverterTypeCommandKind.read(buf),
+            FfiConverterString.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterUInt.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: QueuedCommandRecord) = (
+            FfiConverterULong.allocationSize(value.`queueId`) +
+            FfiConverterTypeCommandKind.allocationSize(value.`kind`) +
+            FfiConverterString.allocationSize(value.`commandJson`) +
+            FfiConverterULong.allocationSize(value.`enqueuedAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastSentAtMs`) +
+            FfiConverterUInt.allocationSize(value.`attemptCount`)
+    )
+
+    override fun write(value: QueuedCommandRecord, buf: ByteBuffer) {
+            FfiConverterULong.write(value.`queueId`, buf)
+            FfiConverterTypeCommandKind.write(value.`kind`, buf)
+            FfiConverterString.write(value.`commandJson`, buf)
+            FfiConverterULong.write(value.`enqueuedAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastSentAtMs`, buf)
+            FfiConverterUInt.write(value.`attemptCount`, buf)
+    }
+}
+
+
+
+data class ReconnectStateRecord (
+    var `shouldReconnect`: kotlin.Boolean
+    , 
+    var `reconnectPending`: kotlin.Boolean
+    , 
+    var `attemptCount`: kotlin.UInt
+    , 
+    var `currentBackoffMs`: kotlin.ULong
+    , 
+    var `nextBackoffMs`: kotlin.ULong?
+    , 
+    var `lastScheduledAtMs`: kotlin.ULong?
+    , 
+    var `lastReconnectedAtMs`: kotlin.ULong?
+    , 
+    var `lastDisconnectReason`: kotlin.String?
+    
+){
+    
+
+    
+
+    
+    companion object
+}
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeReconnectStateRecord: FfiConverterRustBuffer<ReconnectStateRecord> {
+    override fun read(buf: ByteBuffer): ReconnectStateRecord {
+        return ReconnectStateRecord(
+            FfiConverterBoolean.read(buf),
+            FfiConverterBoolean.read(buf),
+            FfiConverterUInt.read(buf),
+            FfiConverterULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalULong.read(buf),
+            FfiConverterOptionalString.read(buf),
+        )
+    }
+
+    override fun allocationSize(value: ReconnectStateRecord) = (
+            FfiConverterBoolean.allocationSize(value.`shouldReconnect`) +
+            FfiConverterBoolean.allocationSize(value.`reconnectPending`) +
+            FfiConverterUInt.allocationSize(value.`attemptCount`) +
+            FfiConverterULong.allocationSize(value.`currentBackoffMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`nextBackoffMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastScheduledAtMs`) +
+            FfiConverterOptionalULong.allocationSize(value.`lastReconnectedAtMs`) +
+            FfiConverterOptionalString.allocationSize(value.`lastDisconnectReason`)
+    )
+
+    override fun write(value: ReconnectStateRecord, buf: ByteBuffer) {
+            FfiConverterBoolean.write(value.`shouldReconnect`, buf)
+            FfiConverterBoolean.write(value.`reconnectPending`, buf)
+            FfiConverterUInt.write(value.`attemptCount`, buf)
+            FfiConverterULong.write(value.`currentBackoffMs`, buf)
+            FfiConverterOptionalULong.write(value.`nextBackoffMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastScheduledAtMs`, buf)
+            FfiConverterOptionalULong.write(value.`lastReconnectedAtMs`, buf)
+            FfiConverterOptionalString.write(value.`lastDisconnectReason`, buf)
+    }
+}
+
+
+
 
 enum class AppServerLifecycleState {
     
@@ -2281,6 +2790,45 @@ public object FfiConverterTypeClientRuntimeError : FfiConverterRustBuffer<Client
     }
 
 }
+
+
+
+
+enum class CommandKind {
+    
+    HELLO,
+    GET_SNAPSHOT,
+    PAIR_START,
+    PAIR_CONFIRM,
+    PAIR_REVOKE,
+    APP_SERVER_REQUEST,
+    APP_SERVER_INTERRUPT;
+
+    
+
+
+    companion object
+}
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterTypeCommandKind: FfiConverterRustBuffer<CommandKind> {
+    override fun read(buf: ByteBuffer) = try {
+        CommandKind.values()[buf.getInt() - 1]
+    } catch (e: IndexOutOfBoundsException) {
+        throw RuntimeException("invalid enum value, something is very wrong!!", e)
+    }
+
+    override fun allocationSize(value: CommandKind) = 4UL
+
+    override fun write(value: CommandKind, buf: ByteBuffer) {
+        buf.putInt(value.ordinal + 1)
+    }
+}
+
+
 
 
 
@@ -2499,6 +3047,38 @@ public object FfiConverterOptionalInt: FfiConverterRustBuffer<kotlin.Int?> {
 /**
  * @suppress
  */
+public object FfiConverterOptionalULong: FfiConverterRustBuffer<kotlin.ULong?> {
+    override fun read(buf: ByteBuffer): kotlin.ULong? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterULong.read(buf)
+    }
+
+    override fun allocationSize(value: kotlin.ULong?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterULong.allocationSize(value)
+        }
+    }
+
+    override fun write(value: kotlin.ULong?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterULong.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterOptionalBoolean: FfiConverterRustBuffer<kotlin.Boolean?> {
     override fun read(buf: ByteBuffer): kotlin.Boolean? {
         if (buf.get().toInt() == 0) {
@@ -2627,6 +3207,38 @@ public object FfiConverterOptionalTypeProtocolError: FfiConverterRustBuffer<Prot
 /**
  * @suppress
  */
+public object FfiConverterOptionalTypeQueuedCommandRecord: FfiConverterRustBuffer<QueuedCommandRecord?> {
+    override fun read(buf: ByteBuffer): QueuedCommandRecord? {
+        if (buf.get().toInt() == 0) {
+            return null
+        }
+        return FfiConverterTypeQueuedCommandRecord.read(buf)
+    }
+
+    override fun allocationSize(value: QueuedCommandRecord?): ULong {
+        if (value == null) {
+            return 1UL
+        } else {
+            return 1UL + FfiConverterTypeQueuedCommandRecord.allocationSize(value)
+        }
+    }
+
+    override fun write(value: QueuedCommandRecord?, buf: ByteBuffer) {
+        if (value == null) {
+            buf.put(0)
+        } else {
+            buf.put(1)
+            FfiConverterTypeQueuedCommandRecord.write(value, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
 public object FfiConverterSequenceString: FfiConverterRustBuffer<List<kotlin.String>> {
     override fun read(buf: ByteBuffer): List<kotlin.String> {
         val len = buf.getInt()
@@ -2673,6 +3285,34 @@ public object FfiConverterSequenceTypePairedDeviceRecord: FfiConverterRustBuffer
         buf.putInt(value.size)
         value.iterator().forEach {
             FfiConverterTypePairedDeviceRecord.write(it, buf)
+        }
+    }
+}
+
+
+
+
+/**
+ * @suppress
+ */
+public object FfiConverterSequenceTypeQueuedCommandRecord: FfiConverterRustBuffer<List<QueuedCommandRecord>> {
+    override fun read(buf: ByteBuffer): List<QueuedCommandRecord> {
+        val len = buf.getInt()
+        return List<QueuedCommandRecord>(len) {
+            FfiConverterTypeQueuedCommandRecord.read(buf)
+        }
+    }
+
+    override fun allocationSize(value: List<QueuedCommandRecord>): ULong {
+        val sizeForLength = 4UL
+        val sizeForItems = value.map { FfiConverterTypeQueuedCommandRecord.allocationSize(it) }.sum()
+        return sizeForLength + sizeForItems
+    }
+
+    override fun write(value: List<QueuedCommandRecord>, buf: ByteBuffer) {
+        buf.putInt(value.size)
+        value.iterator().forEach {
+            FfiConverterTypeQueuedCommandRecord.write(it, buf)
         }
     }
 }
