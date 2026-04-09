@@ -366,7 +366,7 @@ extension CodexSessionMonitor {
         return candidates
     }
 
-    static func makeLocalAppServerMonitor() -> RemoteSessionMonitor {
+    static func makeLocalAppServerMonitor() -> any RemoteSessionControlling {
         let host = localAppServerHost
         return RemoteSessionMonitor(
             initialHosts: [host],

@@ -14,7 +14,7 @@ enum RemoteChatSubmitAction: Equatable {
 }
 
 // Remote slash commands mirror the local composer UX, but every action goes
-// through RemoteSessionMonitor so the selected host and visible thread stay in
+// through RemoteSessionController so the selected host and visible thread stay in
 // sync with the app-server's canonical state.
 enum RemoteSlashCommand: String, CaseIterable, Identifiable {
     case plan = "/plan"
@@ -127,7 +127,7 @@ struct RemoteApprovalPreset: Identifiable, Equatable {
 
 struct RemoteChatView: View {
     let initialThread: RemoteThreadState
-    @ObservedObject var remoteSessionMonitor: RemoteSessionMonitor
+    @ObservedObject var remoteSessionMonitor: RemoteSessionController
     @ObservedObject var viewModel: NotchViewModel
 
     @State private var thread: RemoteThreadState
@@ -149,7 +149,7 @@ struct RemoteChatView: View {
 
     init(
         initialThread: RemoteThreadState,
-        remoteSessionMonitor: RemoteSessionMonitor,
+        remoteSessionMonitor: RemoteSessionController,
         viewModel: NotchViewModel
     ) {
         self.initialThread = initialThread

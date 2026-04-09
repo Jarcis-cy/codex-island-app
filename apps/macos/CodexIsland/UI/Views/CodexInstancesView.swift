@@ -10,7 +10,7 @@ import SwiftUI
 
 struct CodexInstancesView: View {
     @ObservedObject var sessionMonitor: CodexSessionMonitor
-    @ObservedObject var remoteSessionMonitor: RemoteSessionMonitor
+    @ObservedObject var remoteSessionMonitor: RemoteSessionController
     @ObservedObject var viewModel: NotchViewModel
 
     var body: some View {

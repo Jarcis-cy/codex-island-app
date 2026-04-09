@@ -32,7 +32,7 @@ class CodexSessionMonitor: ObservableObject {
 
     var cancellables = Set<AnyCancellable>()
     var codexLivenessTask: Task<Void, Never>?
-    let localAppServerMonitor: RemoteSessionMonitor
+    let localAppServerMonitor: any RemoteSessionControlling
     let canSendTerminalInput: @Sendable (SessionState) -> Bool
     let sendTerminalInput: @Sendable (String, SessionState) async -> Bool
     let processExistsHandler: @Sendable (Int) -> Bool
@@ -42,7 +42,7 @@ class CodexSessionMonitor: ObservableObject {
     var dismissedSyntheticSessionIds: Set<String> = []
 
     init(
-        localAppServerMonitor: RemoteSessionMonitor? = nil,
+        localAppServerMonitor: (any RemoteSessionControlling)? = nil,
         canSendTerminalInput: @escaping @Sendable (SessionState) -> Bool = { session in
             NativeTerminalInputSender.shared.canSend(to: session)
         },
@@ -73,7 +73,7 @@ class CodexSessionMonitor: ObservableObject {
             }
             .store(in: &cancellables)
 
-        self.localAppServerMonitor.$threads
+        self.localAppServerMonitor.threadsPublisher
             .receive(on: DispatchQueue.main)
             .sink { [weak self] threads in
                 guard let self else { return }

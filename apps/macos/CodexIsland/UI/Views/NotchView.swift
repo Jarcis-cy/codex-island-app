@@ -18,7 +18,7 @@ private let cornerRadiusInsets = (
 struct NotchView: View {
     @ObservedObject var viewModel: NotchViewModel
     @StateObject private var sessionMonitor = CodexSessionMonitor()
-    @StateObject private var remoteSessionMonitor = RemoteSessionMonitor.shared
+    @StateObject private var remoteSessionMonitor = RemoteSessionController.shared
     @StateObject private var activityCoordinator = NotchActivityCoordinator.shared
     @ObservedObject private var updateManager = UpdateManager.shared
     @State private var previousPendingIds: Set<String> = []

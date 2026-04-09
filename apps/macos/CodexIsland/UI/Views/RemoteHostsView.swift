@@ -9,7 +9,7 @@ import SwiftUI
 
 struct RemoteHostsView: View {
     @ObservedObject var viewModel: NotchViewModel
-    @ObservedObject private var remoteSessionMonitor = RemoteSessionMonitor.shared
+    @ObservedObject private var remoteSessionMonitor = RemoteSessionController.shared
     @StateObject private var sshConfigSuggestionStore = SSHConfigSuggestionStore()
 
     var body: some View {
