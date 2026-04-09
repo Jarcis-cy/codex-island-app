@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">Codex Island</string>
+    <string name="bootstrap_message">Codex Island Android shell bootstrap.\n\nShared engine wiring comes next.</string>
+</resources>

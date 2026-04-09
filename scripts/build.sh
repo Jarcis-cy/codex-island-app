@@ -4,6 +4,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+MACOS_PROJECT_PATH="$PROJECT_DIR/apps/macos/CodexIsland.xcodeproj"
 BUILD_DIR="$PROJECT_DIR/build"
 ARCHIVE_PATH="$BUILD_DIR/CodexIsland.xcarchive"
 EXPORT_PATH="$BUILD_DIR/export"
@@ -45,6 +46,7 @@ cd "$PROJECT_DIR"
 
 echo "Archiving..."
 run_xcodebuild archive \
+    -project "$MACOS_PROJECT_PATH" \
     -scheme CodexIsland \
     -configuration Release \
     -archivePath "$ARCHIVE_PATH" \

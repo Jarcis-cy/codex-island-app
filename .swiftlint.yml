@@ -1,12 +1,12 @@
 included:
-  - CodexIsland
-  - CodexIslandTests
+  - apps/macos/CodexIsland
+  - apps/macos/CodexIslandTests
 
 excluded:
   - .beads
   - build
   - releases
-  - sidecar
+  - engine
 
 reporter: xcode
 

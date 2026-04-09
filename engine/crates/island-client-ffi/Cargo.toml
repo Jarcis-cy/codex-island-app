@@ -1,0 +1,9 @@
+[package]
+name = "codex-island-client-ffi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+codex-island-core = { path = "../island-core" }

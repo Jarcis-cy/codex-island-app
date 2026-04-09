@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="CodexIsland/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Codex Island logo" width="100" height="100">
+  <img src="apps/macos/CodexIsland/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" alt="Codex Island logo" width="100" height="100">
   <h1 align="center">Codex Island</h1>
   <p align="center">
     A Dynamic Island-style macOS companion for Codex CLI.
@@ -82,7 +82,7 @@ Download the latest release from GitHub, or build it locally with Xcode.
 For a debug build:
 
 ```bash
-xcodebuild -scheme CodexIsland -configuration Debug build
+xcodebuild -project apps/macos/CodexIsland.xcodeproj -scheme CodexIsland -configuration Debug build
 ```
 
 For a release build:
@@ -114,17 +114,17 @@ On first launch, Codex Island installs a managed hook script into `~/.codex/hook
 
 Remote hosts use a separate path: the app opens an SSH stdio transport to `codex app-server` on the target machine and keeps remote thread state alongside the local hooks-first session model.
 
-The current architecture is still hooks-first inside the macOS app process. The `sidecar/` directory is a reserved Rust scaffold for future work around transcript parsing, state aggregation, and IPC.
+The current architecture is still hooks-first inside the macOS app process. The `engine/` workspace is the shared Rust foundation for future work around transcript parsing, state aggregation, host daemon behavior, and cross-platform IPC/FFI.
 
 ## Project Layout
 
-- `CodexIsland/App/`: app lifecycle and window bootstrap
-- `CodexIsland/Core/`: shared settings, geometry, and screen selection
-- `CodexIsland/Services/`: hooks, local session parsing, remote app-server management, tmux integration, updates, and window management
-- `CodexIsland/UI/`: notch views, menu UI, chat UI, and reusable components
-- `CodexIsland/Resources/`: bundled scripts such as `codex-island-state.py`
+- `apps/macos/CodexIsland/App/`: app lifecycle and window bootstrap
+- `apps/macos/CodexIsland/Core/`: shared settings, geometry, and screen selection
+- `apps/macos/CodexIsland/Services/`: hooks, local session parsing, remote app-server management, tmux integration, updates, and window management
+- `apps/macos/CodexIsland/UI/`: notch views, menu UI, chat UI, and reusable components
+- `apps/macos/CodexIsland/Resources/`: bundled scripts such as `codex-island-state.py`
 - `scripts/`: build, signing, notarization, and release helpers
-- `sidecar/`: future Rust sidecar scaffold
+- `engine/`: shared Rust workspace for protocol, host daemon, runtime, and bindings
 
 ## Privacy
 
@@ -151,11 +151,11 @@ brew install swiftformat swiftlint
 ./scripts/create-release.sh
 ```
 
-`./scripts/swift-quality.sh` lints both `CodexIsland/` and `CodexIslandTests/` in one run. `./scripts/install-git-hooks.sh` switches Git to the repository's `.githooks/` wrappers, keeps existing beads hooks in the chain, and adds a staged-file Swift quality check to `pre-commit` so existing repository-wide debt does not block unrelated commits.
+`./scripts/swift-quality.sh` lints both `apps/macos/CodexIsland/` and `apps/macos/CodexIslandTests/` in one run. `./scripts/install-git-hooks.sh` switches Git to the repository's `.githooks/` wrappers, keeps existing beads hooks in the chain, and adds a staged-file Swift quality check to `pre-commit` so existing repository-wide debt does not block unrelated commits.
 
 Heuristic `fuck-u-code` analysis is calibrated as a non-blocking audit signal rather than a CI gate because the current Swift parser frequently falls back to regex mode. Repository-specific thresholds and triage rules live in [`docs/quality-heuristics.md`](./docs/quality-heuristics.md).
 
-If you change anything under `CodexIsland/Services/Hooks/` or `CodexIsland/Resources/codex-island-state.py`, treat it as user-impacting local environment behavior and verify it carefully.
+If you change anything under `apps/macos/CodexIsland/Services/Hooks/` or `apps/macos/CodexIsland/Resources/codex-island-state.py`, treat it as user-impacting local environment behavior and verify it carefully.
 
 ## Acknowledgements
 

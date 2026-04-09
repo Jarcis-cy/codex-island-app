@@ -3,5 +3,5 @@
 --linebreaks lf
 --ifdef indent
 --trimwhitespace always
---exclude .beads,build,releases,sidecar
+--exclude .beads,build,releases,engine
 --rules consecutiveBlankLines,indent,linebreakAtEndOfFile,spaceAroundBraces,spaceAroundBrackets,spaceAroundComments,spaceAroundOperators,spaceAroundParens,trailingSpace

@@ -13,7 +13,7 @@ Runs the repository Swift quality baseline:
   - SwiftLint in strict mode
 
 Options:
-  --all     Lint CodexIsland/ and CodexIslandTests/ (default)
+  --all     Lint apps/macos/CodexIsland/ and apps/macos/CodexIslandTests/ (default)
   --staged  Lint only staged Swift files for git hooks
 EOF
 }
@@ -35,6 +35,7 @@ EOF
 }
 
 mode="all"
+macos_targets=("apps/macos/CodexIsland" "apps/macos/CodexIslandTests")
 case "${1:-}" in
     "")
         ;;
@@ -69,8 +70,8 @@ if [[ "$mode" == "staged" ]]; then
 
     echo "Running Swift quality checks on staged Swift files..."
 else
-    targets=("CodexIsland" "CodexIslandTests")
-    echo "Running Swift quality checks on CodexIsland/ and CodexIslandTests/..."
+    targets=("${macos_targets[@]}")
+    echo "Running Swift quality checks on apps/macos/CodexIsland/ and apps/macos/CodexIslandTests/..."
 fi
 
 ensure_command swiftformat

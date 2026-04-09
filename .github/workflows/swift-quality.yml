@@ -35,9 +35,9 @@ jobs:
       - name: Build Debug app
         env:
           DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
-        run: xcodebuild -project CodexIsland.xcodeproj -scheme CodexIsland -configuration Debug -derivedDataPath "$DERIVED_DATA_PATH" SWIFT_ENABLE_EXPLICIT_MODULES=NO build
+        run: xcodebuild -project apps/macos/CodexIsland.xcodeproj -scheme CodexIsland -configuration Debug -derivedDataPath "$DERIVED_DATA_PATH" SWIFT_ENABLE_EXPLICIT_MODULES=NO build
 
       - name: Run tests
         env:
           DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
-        run: xcodebuild test -project CodexIsland.xcodeproj -scheme CodexIsland -derivedDataPath "$DERIVED_DATA_PATH" SWIFT_ENABLE_EXPLICIT_MODULES=NO -destination 'platform=macOS'
+        run: xcodebuild test -project apps/macos/CodexIsland.xcodeproj -scheme CodexIsland -derivedDataPath "$DERIVED_DATA_PATH" SWIFT_ENABLE_EXPLICIT_MODULES=NO -destination 'platform=macOS'

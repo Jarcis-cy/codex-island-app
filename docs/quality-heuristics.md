@@ -52,6 +52,6 @@ Repository defaults live in [`.fuckucoderc.json`](../.fuckucoderc.json):
 
 - downweights parser-sensitive structural metrics
 - increases the weight of documentation so low-comment high-risk scripts are easier to spot
-- excludes `.beads`, `build`, `releases`, `sidecar`, `docs/media`, and archived app bundles
+- excludes `.beads`, `build`, `releases`, `engine`, `docs/media`, and archived app bundles
 
 This calibration is intentionally conservative. If `fuck-u-code` ships a stable Swift Tree-sitter parser in CI later, we should revisit the thresholds and decide whether any of these metrics can become blocking.
