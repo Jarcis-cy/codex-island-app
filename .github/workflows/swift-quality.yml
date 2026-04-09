@@ -40,4 +40,4 @@ jobs:
       - name: Run tests
         env:
           DERIVED_DATA_PATH: ${{ runner.temp }}/DerivedData
-        run: xcodebuild test -project apps/macos/CodexIsland.xcodeproj -scheme CodexIsland -derivedDataPath "$DERIVED_DATA_PATH" SWIFT_ENABLE_EXPLICIT_MODULES=NO -destination 'platform=macOS'
+        run: xcodebuild test -project apps/macos/CodexIsland.xcodeproj -scheme CodexIsland -derivedDataPath "$DERIVED_DATA_PATH" SWIFT_ENABLE_EXPLICIT_MODULES=NO -parallel-testing-enabled NO -destination 'platform=macOS'
