@@ -32,6 +32,10 @@ cargo run -p codex-island-client-ffi --bin uniffi-bindgen --features bindgen -- 
     --language swift \
     --out-dir "$SWIFT_OUT_DIR"
 
+if [[ -f "$SWIFT_OUT_DIR/codex_island_clientFFI.modulemap" ]]; then
+    cp "$SWIFT_OUT_DIR/codex_island_clientFFI.modulemap" "$SWIFT_OUT_DIR/module.modulemap"
+fi
+
 SWIFT_BINDING_FILE="$SWIFT_OUT_DIR/codex_island_client.swift"
 if command -v swiftformat >/dev/null 2>&1 && [[ -f "$SWIFT_BINDING_FILE" ]]; then
     swiftformat "$SWIFT_BINDING_FILE" >/dev/null

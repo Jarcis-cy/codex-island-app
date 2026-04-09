@@ -46,6 +46,11 @@
 			path = CodexIsland;
 			sourceTree = "<group>";
 		};
+		FD6144002F40000100A26501 /* Generated */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Generated;
+			sourceTree = "<group>";
+		};
 		FDBA10022F0A0001002A6501 /* CodexIslandTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = CodexIslandTests;
@@ -78,6 +83,7 @@
 			isa = PBXGroup;
 			children = (
 				FD33FD5F2EDF32D7002A6548 /* CodexIsland */,
+				FD6144002F40000100A26501 /* Generated */,
 				FDBA10022F0A0001002A6501 /* CodexIslandTests */,
 				FD33FD5E2EDF32D7002A6548 /* Products */,
 			);
@@ -94,11 +100,42 @@
 		};
 /* End PBXGroup section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		FD6144012F40000100A26501 /* Prepare Engine FFI */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/../../scripts/prepare-macos-engine-ffi.sh",
+				"$(SRCROOT)/Generated/Engine/codex_island_client.swift",
+				"$(SRCROOT)/Generated/Engine/codex_island_clientFFI.h",
+				"$(SRCROOT)/Generated/Engine/codex_island_clientFFI.modulemap",
+				"$(SRCROOT)/../../engine/crates/island-client-ffi/src/lib.rs",
+				"$(SRCROOT)/../../engine/crates/island-core/src/lib.rs",
+				"$(SRCROOT)/../../engine/crates/island-proto/src/lib.rs",
+			);
+			name = "Prepare Engine FFI";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)/libcodex_island_client_ffi.dylib",
+				"$(SRCROOT)/Generated/Engine/module.modulemap",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"$SRCROOT/../../scripts/prepare-macos-engine-ffi.sh\" \"$TARGET_BUILD_DIR/$FRAMEWORKS_FOLDER_PATH\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXNativeTarget section */
 		FD33FD5C2EDF32D7002A6548 /* CodexIsland */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = FD33FD682EDF32D8002A6548 /* Build configuration list for PBXNativeTarget "CodexIsland" */;
 			buildPhases = (
+				FD6144012F40000100A26501 /* Prepare Engine FFI */,
 				FD33FD592EDF32D7002A6548 /* Sources */,
 				FD33FD5A2EDF32D7002A6548 /* Frameworks */,
 				FD33FD5B2EDF32D7002A6548 /* Resources */,
@@ -109,6 +146,7 @@
 			);
 			fileSystemSynchronizedGroups = (
 				FD33FD5F2EDF32D7002A6548 /* CodexIsland */,
+				FD6144002F40000100A26501 /* Generated */,
 			);
 			name = CodexIsland;
 			packageProductDependencies = (
@@ -363,6 +401,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Generated/Engine",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CodexIsland/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -371,7 +413,15 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)",
+				);
 				MARKETING_VERSION = 0.0.5;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lcodex_island_client_ffi",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.celestial.CodexIsland;
 				PRODUCT_NAME = "Codex Island";
 				REGISTER_APP_GROUPS = YES;
@@ -379,6 +429,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Generated/Engine";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -399,6 +450,10 @@
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(SRCROOT)/Generated/Engine",
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = CodexIsland/Info.plist;
 				INFOPLIST_KEY_LSUIElement = YES;
@@ -407,7 +462,15 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(TARGET_BUILD_DIR)/$(FRAMEWORKS_FOLDER_PATH)",
+				);
 				MARKETING_VERSION = 0.0.5;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-lcodex_island_client_ffi",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.celestial.CodexIsland;
 				PRODUCT_NAME = "Codex Island";
 				REGISTER_APP_GROUPS = YES;
@@ -415,6 +478,7 @@
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(SRCROOT)/Generated/Engine";
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 			};
@@ -437,6 +501,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(BUILT_PRODUCTS_DIR)/include",
+					"$(SRCROOT)/Generated/Engine",
 				);
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -455,7 +520,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_INCLUDE_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR)";
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR) $(SRCROOT)/Generated/Engine";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Codex Island.app/Contents/MacOS/Codex Island";
 				TEST_TARGET_NAME = CodexIsland;
@@ -479,6 +544,7 @@
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(BUILT_PRODUCTS_DIR)/include",
+					"$(SRCROOT)/Generated/Engine",
 				);
 				INFOPLIST_KEY_CFBundlePackageType = BNDL;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -497,7 +563,7 @@
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_INCLUDE_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR)";
+				SWIFT_INCLUDE_PATHS = "$(inherited) $(BUILT_PRODUCTS_DIR) $(SRCROOT)/Generated/Engine";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Codex Island.app/Contents/MacOS/Codex Island";
 				TEST_TARGET_NAME = CodexIsland;
