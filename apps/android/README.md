@@ -8,9 +8,15 @@ This app is intentionally thin:
 - Rust owns protocol, connection logic, state reduction, and host daemon
   interaction.
 
-The current Android project is only a bootstrap skeleton. It will consume the
-shared engine through generated bindings checked into
-`app/src/main/java/uniffi/codex_island_client/`.
+The current Android project now includes:
+
+- host profile management with QR/manual input parsing
+- secure local storage for host tokens and pairing state
+- a thread/chat workspace shell with approval and user-input placeholders
+- generated UniFFI bindings checked into `app/src/main/java/uniffi/codex_island_client/`
+
+The remaining gap before real end-to-end transport is packaging an
+Android-loadable `island-client-ffi` native library.
 
 Regenerate the Kotlin and Swift UniFFI bindings from the repository root with:
 
@@ -59,6 +65,7 @@ The repository now includes:
 
 - a Robolectric JVM test for `MainActivity`
 - an instrumentation smoke test for `MainActivity`
+- bootstrap workspace and thread/chat view-model tests
 - Gradle wrapper files under `apps/android/`
 
 ## Suggested macOS Workflow
