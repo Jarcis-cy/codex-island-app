@@ -41,6 +41,7 @@ interface EngineRuntimeGateway {
 class UniffiEngineRuntimeGateway(
     private val clientName: String,
     private val clientVersion: String,
+    private val nativeLibraryDir: String?,
 ) : EngineRuntimeGateway {
     override fun probe(
         hostProfile: HostProfile?,
@@ -50,6 +51,7 @@ class UniffiEngineRuntimeGateway(
         draftMessage: String,
     ): EngineRuntimeProbeResult {
         return try {
+            ensureNativeLibraryLoaded()
             uniffiEnsureInitialized()
             EngineRuntime(
                 ClientRuntimeConfig(
@@ -213,8 +215,40 @@ class UniffiEngineRuntimeGateway(
         ).take(220)
     }
 
+    private fun ensureNativeLibraryLoaded() {
+        synchronized(nativeLoadLock) {
+            if (nativeLibraryLoaded) {
+                return
+            }
+
+            System.setProperty(
+                "uniffi.component.codex_island_client.libraryOverride",
+                NATIVE_LIBRARY_BASENAME
+            )
+
+            try {
+                System.loadLibrary(NATIVE_LIBRARY_BASENAME)
+            } catch (firstError: UnsatisfiedLinkError) {
+                val nativeLibraryPath = nativeLibraryDir
+                    ?.let { "$it/lib${NATIVE_LIBRARY_BASENAME}.so" }
+                    ?: throw firstError
+                System.setProperty("jna.library.path", nativeLibraryDir)
+                System.setProperty(
+                    "uniffi.component.codex_island_client.libraryOverride",
+                    nativeLibraryPath
+                )
+                System.load(nativeLibraryPath)
+            }
+
+            nativeLibraryLoaded = true
+        }
+    }
+
     private companion object {
         private const val ANDROID_PLATFORM = "android"
+        private const val NATIVE_LIBRARY_BASENAME = "codex_island_client_ffi"
+        private val nativeLoadLock = Any()
+        private var nativeLibraryLoaded = false
 
         private fun jsonString(value: String): String =
             buildString {

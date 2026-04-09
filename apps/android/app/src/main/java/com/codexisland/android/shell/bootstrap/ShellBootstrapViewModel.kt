@@ -394,7 +394,8 @@ class ShellBootstrapViewModel(
                     val store = SecureShellStore(appContext)
                     val gateway = UniffiEngineRuntimeGateway(
                         clientName = "Codex Island Android",
-                        clientVersion = APP_VERSION
+                        clientVersion = APP_VERSION,
+                        nativeLibraryDir = appContext.applicationInfo.nativeLibraryDir
                     )
                     @Suppress("UNCHECKED_CAST")
                     return ShellBootstrapViewModel(store, gateway, store) as T

@@ -88,6 +88,30 @@ PY
     echo "$candidate"
 }
 
+find_android_ndk() {
+    if [[ -n "${ANDROID_NDK_ROOT:-}" && -d "${ANDROID_NDK_ROOT}" ]]; then
+        echo "$ANDROID_NDK_ROOT"
+        return 0
+    fi
+
+    if [[ -n "${ANDROID_NDK_HOME:-}" && -d "${ANDROID_NDK_HOME}" ]]; then
+        echo "$ANDROID_NDK_HOME"
+        return 0
+    fi
+
+    if [[ -n "${NDK_HOME:-}" && -d "${NDK_HOME}" ]]; then
+        echo "$NDK_HOME"
+        return 0
+    fi
+
+    if [[ -d "$1/ndk" ]]; then
+        find "$1/ndk" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1
+        return 0
+    fi
+
+    return 1
+}
+
 JAVA_HOME_VALUE="$(find_java_home || true)"
 if [[ -z "$JAVA_HOME_VALUE" ]]; then
     echo "missing supported JDK. Install JDK 17 or 21 and set JAVA_HOME." >&2
@@ -101,18 +125,23 @@ if [[ -z "$ANDROID_SDK_VALUE" ]]; then
 fi
 
 ANDROID_SDK_VALUE="$(resolve_android_sdk_root "$ANDROID_SDK_VALUE")"
+ANDROID_NDK_VALUE="$(find_android_ndk "$ANDROID_SDK_VALUE" || true)"
 
 mkdir -p "$ANDROID_DIR"
 printf 'sdk.dir=%s\n' "$ANDROID_SDK_VALUE" > "$LOCAL_PROPERTIES"
 
 echo "JAVA_HOME=$JAVA_HOME_VALUE"
 echo "ANDROID_SDK_ROOT=$ANDROID_SDK_VALUE"
+if [[ -n "$ANDROID_NDK_VALUE" ]]; then
+    echo "ANDROID_NDK_ROOT=$ANDROID_NDK_VALUE"
+fi
 echo "local.properties -> $LOCAL_PROPERTIES"
 
 missing=()
 [[ -d "$ANDROID_SDK_VALUE/platforms/android-35" ]] || missing+=("platforms;android-35")
 [[ -d "$ANDROID_SDK_VALUE/build-tools/35.0.0" ]] || missing+=("build-tools;35.0.0")
 [[ -d "$ANDROID_SDK_VALUE/platform-tools" ]] || missing+=("platform-tools")
+[[ -n "$ANDROID_NDK_VALUE" ]] || missing+=("ndk;27.0.12077973")
 
 if (( ${#missing[@]} > 0 )); then
     echo "missing SDK components: ${missing[*]}" >&2

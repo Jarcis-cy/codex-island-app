@@ -41,8 +41,10 @@ The script will:
 - detect a supported JDK
 - detect the Android SDK from `ANDROID_SDK_ROOT`, `ANDROID_HOME`, or
   `~/Library/Android/sdk`
+- detect the newest installed Android NDK under the same SDK root
 - write `apps/android/local.properties`
-- warn if `platforms;android-35`, `build-tools;35.0.0`, or `platform-tools`
+- warn if `platforms;android-35`, `build-tools;35.0.0`, `platform-tools`, or
+  `ndk;27.0.12077973`
   are missing
 
 If you need a template, copy `apps/android/local.properties.example`.
@@ -66,13 +68,15 @@ The repository now includes:
 - a Robolectric JVM test for `MainActivity`
 - an instrumentation smoke test for `MainActivity`
 - bootstrap workspace and thread/chat view-model tests
+- automatic Rust Android `.so` packaging during Gradle `preBuild`
 - Gradle wrapper files under `apps/android/`
 
 ## Suggested macOS Workflow
 
 1. Install Android Studio.
 2. Install SDK components `platforms;android-35`, `build-tools;35.0.0`, and
-   `platform-tools`.
+   `platform-tools`, plus one NDK side-by-side package such as
+   `ndk;27.0.12077973`.
 3. Create or boot an emulator from Android Studio Device Manager if you want to
    run `connectedDebugAndroidTest`.
 4. Run `./scripts/android-test.sh`.

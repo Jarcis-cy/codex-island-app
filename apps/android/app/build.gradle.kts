@@ -1,6 +1,35 @@
+import org.gradle.api.tasks.Exec
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
+}
+
+val repoRoot = rootProject.projectDir.parentFile.parentFile
+val generatedJniLibsDir = layout.buildDirectory.dir("generated/jniLibs/main")
+
+val buildRustAndroidFfi by tasks.registering(Exec::class) {
+    group = "build"
+    description = "Builds the shared Rust FFI library for Android ABIs."
+
+    val outputDir = generatedJniLibsDir.get().asFile
+    outputs.dir(outputDir)
+    inputs.files(
+        fileTree("$repoRoot/engine/crates/island-client-ffi/src"),
+        fileTree("$repoRoot/engine/crates/island-core/src"),
+        fileTree("$repoRoot/engine/crates/island-proto/src"),
+        file("$repoRoot/engine/crates/island-client-ffi/Cargo.toml"),
+        file("$repoRoot/engine/crates/island-core/Cargo.toml"),
+        file("$repoRoot/engine/crates/island-proto/Cargo.toml"),
+        file("$repoRoot/engine/Cargo.lock"),
+        file("$repoRoot/engine/Cargo.toml")
+    )
+
+    commandLine(
+        "$repoRoot/scripts/build-android-ffi.sh",
+        "--out-dir",
+        outputDir.absolutePath
+    )
 }
 
 android {
@@ -15,6 +44,10 @@ android {
         versionName = "0.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -40,9 +73,15 @@ android {
         viewBinding = true
     }
 
+    sourceSets.getByName("main").jniLibs.srcDir(generatedJniLibsDir)
+
     testOptions {
         unitTests.isIncludeAndroidResources = true
     }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(buildRustAndroidFfi)
 }
 
 dependencies {
@@ -52,7 +91,7 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.lifecycle:lifecycle-livedata-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("net.java.dev.jna:jna:5.18.1")
+    implementation("net.java.dev.jna:jna:5.18.1@aar")
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("androidx.arch.core:core-testing:2.2.0")
