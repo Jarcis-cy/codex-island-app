@@ -153,6 +153,10 @@ pub enum ClientCommand {
         method: String,
         params: Value,
     },
+    AppServerResponse {
+        request_id: String,
+        result: Value,
+    },
     AppServerInterrupt {
         thread_id: String,
         turn_id: String,

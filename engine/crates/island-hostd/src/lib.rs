@@ -498,6 +498,26 @@ impl HostDaemon {
                 }
                 Vec::new()
             }
+            ClientCommand::AppServerResponse { request_id, result } => {
+                if !self.is_authenticated() {
+                    return vec![ServerEvent::Error {
+                        error: ProtocolError {
+                            code: ErrorCode::PairingRequired,
+                            message: "Pair and authenticate before responding to app-server requests"
+                                .into(),
+                            retryable: Some(false),
+                            details: None,
+                        },
+                    }];
+                }
+                if let Err(error) = self.send_to_app_server(json!({
+                    "id": request_id,
+                    "result": result
+                })) {
+                    return vec![self.app_server_unavailable_error(error)];
+                }
+                Vec::new()
+            }
             ClientCommand::AppServerInterrupt { thread_id, turn_id } => {
                 if !self.is_authenticated() {
                     return vec![ServerEvent::Error {
@@ -1519,6 +1539,57 @@ mod tests {
             event,
             ServerEvent::AppServerEvent { payload, .. }
             if payload["method"] == json!("item/tool/requestUserInput")
+        )));
+    }
+
+    #[test]
+    fn harness_forwards_app_server_responses_without_blocking_follow_up_requests() {
+        let script = "while IFS= read -r line; do \
+            case \"$line\" in \
+              *'\"result\":{\"decision\":\"accept\"}'*) \
+                printf '{\"method\":\"serverRequest/resolved\",\"params\":{\"threadId\":\"thread-1\",\"requestId\":\"approval-1\"}}\\n' ;; \
+              *'\"method\":\"thread/list\"'*) \
+                printf '{\"id\":\"req-list\",\"result\":{\"threads\":[{\"id\":\"thread-1\",\"title\":\"Inbox\"}]}}\\n'; \
+                break ;; \
+            esac; \
+        done";
+        let mut harness = FakeAppServerHarness::new(script);
+
+        let events = harness.hostd.handle_command(ClientCommand::AppServerResponse {
+            request_id: "approval-1".into(),
+            result: json!({ "decision": "accept" }),
+        });
+        assert!(events.is_empty(), "unexpected response forwarding events: {events:?}");
+
+        harness.send_request("req-list", "thread/list", json!({"limit": 100}));
+
+        let events = harness.poll_until(Duration::from_secs(2), |events| {
+            let resolved = events.iter().any(|event| {
+                matches!(
+                    event,
+                    ServerEvent::AppServerEvent { payload, .. }
+                    if payload["method"] == json!("serverRequest/resolved")
+                )
+            });
+            let listed = events.iter().any(|event| {
+                matches!(
+                    event,
+                    ServerEvent::AppServerResponse { request_id, .. }
+                    if request_id == "req-list"
+                )
+            });
+            resolved && listed
+        });
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerEvent { payload, .. }
+            if payload["method"] == json!("serverRequest/resolved")
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerResponse { request_id, result }
+            if request_id == "req-list" && result["threads"][0]["id"] == json!("thread-1")
         )));
     }
 

@@ -642,6 +642,8 @@ internal object IntegrityCheckingUniffiLib {
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_request_command_json(
     ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_response_command_json(
+    ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_apply_server_event_json(
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_auth_token(
@@ -655,6 +657,8 @@ internal object IntegrityCheckingUniffiLib {
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_interrupt(
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_request(
+    ): Short
+    external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_response(
     ): Short
     external fun uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_get_snapshot(
     ): Short
@@ -718,6 +722,8 @@ external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_i
 ): RustBuffer.ByValue
 external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_request_command_json(`ptr`: Long,`requestId`: RustBuffer.ByValue,`method`: RustBuffer.ByValue,`paramsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_response_command_json(`ptr`: Long,`requestId`: RustBuffer.ByValue,`resultJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): RustBuffer.ByValue
 external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_apply_server_event_json(`ptr`: Long,`eventJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): RustBuffer.ByValue
 external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_auth_token(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
@@ -731,6 +737,8 @@ external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_client_versi
 external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_interrupt(`ptr`: Long,`threadId`: RustBuffer.ByValue,`turnId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_request(`ptr`: Long,`requestId`: RustBuffer.ByValue,`method`: RustBuffer.ByValue,`paramsJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+): Long
+external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_response(`ptr`: Long,`requestId`: RustBuffer.ByValue,`resultJson`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
 external fun uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_get_snapshot(`ptr`: Long,uniffi_out_err: UniffiRustCallStatus, 
 ): Long
@@ -890,6 +898,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_request_command_json() != 46049.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_response_command_json() != 57703.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_apply_server_event_json() != 48658.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -909,6 +920,9 @@ private fun uniffiCheckApiChecksums(lib: IntegrityCheckingUniffiLib) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_request() != 11717.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_response() != 25027.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_get_snapshot() != 19711.toShort()) {
@@ -1369,6 +1383,8 @@ public interface EngineRuntimeInterface {
     
     fun `appServerRequestCommandJson`(`requestId`: kotlin.String, `method`: kotlin.String, `paramsJson`: kotlin.String): kotlin.String
     
+    fun `appServerResponseCommandJson`(`requestId`: kotlin.String, `resultJson`: kotlin.String): kotlin.String
+    
     fun `applyServerEventJson`(`eventJson`: kotlin.String): EngineRuntimeState
     
     fun `authToken`(): kotlin.String?
@@ -1382,6 +1398,8 @@ public interface EngineRuntimeInterface {
     fun `enqueueAppServerInterrupt`(`threadId`: kotlin.String, `turnId`: kotlin.String): kotlin.ULong
     
     fun `enqueueAppServerRequest`(`requestId`: kotlin.String, `method`: kotlin.String, `paramsJson`: kotlin.String): kotlin.ULong
+    
+    fun `enqueueAppServerResponse`(`requestId`: kotlin.String, `resultJson`: kotlin.String): kotlin.ULong
     
     fun `enqueueGetSnapshot`(): kotlin.ULong
     
@@ -1561,6 +1579,20 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
     
 
     
+    @Throws(ClientRuntimeException::class)override fun `appServerResponseCommandJson`(`requestId`: kotlin.String, `resultJson`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    callWithHandle {
+    uniffiRustCallWithError(ClientRuntimeException) { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_response_command_json(
+        it,
+        FfiConverterString.lower(`requestId`),FfiConverterString.lower(`resultJson`),_status)
+}
+    }
+    )
+    }
+    
+
+    
     @Throws(ClientRuntimeException::class)override fun `applyServerEventJson`(`eventJson`: kotlin.String): EngineRuntimeState {
             return FfiConverterTypeEngineRuntimeState.lift(
     callWithHandle {
@@ -1647,6 +1679,20 @@ open class EngineRuntime: Disposable, AutoCloseable, EngineRuntimeInterface
     UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_request(
         it,
         FfiConverterString.lower(`requestId`),FfiConverterString.lower(`method`),FfiConverterString.lower(`paramsJson`),_status)
+}
+    }
+    )
+    }
+    
+
+    
+    @Throws(ClientRuntimeException::class)override fun `enqueueAppServerResponse`(`requestId`: kotlin.String, `resultJson`: kotlin.String): kotlin.ULong {
+            return FfiConverterULong.lift(
+    callWithHandle {
+    uniffiRustCallWithError(ClientRuntimeException) { _status ->
+    UniffiLib.uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_response(
+        it,
+        FfiConverterString.lower(`requestId`),FfiConverterString.lower(`resultJson`),_status)
 }
     }
     )
@@ -2802,6 +2848,7 @@ enum class CommandKind {
     PAIR_CONFIRM,
     PAIR_REVOKE,
     APP_SERVER_REQUEST,
+    APP_SERVER_RESPONSE,
     APP_SERVER_INTERRUPT;
 
     

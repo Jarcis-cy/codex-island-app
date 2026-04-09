@@ -535,6 +535,8 @@ public protocol EngineRuntimeProtocol: AnyObject, Sendable {
 
     func appServerRequestCommandJson(requestId: String, method: String, paramsJson: String) throws  -> String
 
+    func appServerResponseCommandJson(requestId: String, resultJson: String) throws  -> String
+
     func applyServerEventJson(eventJson: String) throws  -> EngineRuntimeState
 
     func authToken()  -> String?
@@ -548,6 +550,8 @@ public protocol EngineRuntimeProtocol: AnyObject, Sendable {
     func enqueueAppServerInterrupt(threadId: String, turnId: String)  -> UInt64
 
     func enqueueAppServerRequest(requestId: String, method: String, paramsJson: String) throws  -> UInt64
+
+    func enqueueAppServerResponse(requestId: String, resultJson: String) throws  -> UInt64
 
     func enqueueGetSnapshot()  -> UInt64
 
@@ -667,6 +671,16 @@ open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
         })
     }
 
+    open func appServerResponseCommandJson(requestId: String, resultJson: String) throws  -> String  {
+        return try  FfiConverterString.lift(try rustCallWithError(FfiConverterTypeClientRuntimeError_lift) {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_app_server_response_command_json(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(requestId),
+                FfiConverterString.lower(resultJson), $0
+            )
+        })
+    }
+
     open func applyServerEventJson(eventJson: String) throws  -> EngineRuntimeState  {
         return try  FfiConverterTypeEngineRuntimeState_lift(try rustCallWithError(FfiConverterTypeClientRuntimeError_lift) {
             uniffi_codex_island_client_ffi_fn_method_engineruntime_apply_server_event_json(
@@ -725,6 +739,16 @@ open class EngineRuntime: EngineRuntimeProtocol, @unchecked Sendable {
                 FfiConverterString.lower(requestId),
                 FfiConverterString.lower(method),
                 FfiConverterString.lower(paramsJson), $0
+            )
+        })
+    }
+
+    open func enqueueAppServerResponse(requestId: String, resultJson: String) throws  -> UInt64  {
+        return try  FfiConverterUInt64.lift(try rustCallWithError(FfiConverterTypeClientRuntimeError_lift) {
+            uniffi_codex_island_client_ffi_fn_method_engineruntime_enqueue_app_server_response(
+                self.uniffiCloneHandle(),
+                FfiConverterString.lower(requestId),
+                FfiConverterString.lower(resultJson), $0
             )
         })
     }
@@ -1953,6 +1977,7 @@ public enum CommandKind: Equatable, Hashable {
     case pairConfirm
     case pairRevoke
     case appServerRequest
+    case appServerResponse
     case appServerInterrupt
 
 }
@@ -1983,7 +2008,9 @@ public struct FfiConverterTypeCommandKind: FfiConverterRustBuffer {
 
         case 6: return .appServerRequest
 
-        case 7: return .appServerInterrupt
+        case 7: return .appServerResponse
+
+        case 8: return .appServerInterrupt
 
         default: throw UniffiInternalError.unexpectedEnumCase
         }
@@ -2010,8 +2037,11 @@ public struct FfiConverterTypeCommandKind: FfiConverterRustBuffer {
         case .appServerRequest:
             writeInt(&buf, Int32(6))
 
-        case .appServerInterrupt:
+        case .appServerResponse:
             writeInt(&buf, Int32(7))
+
+        case .appServerInterrupt:
+            writeInt(&buf, Int32(8))
 
         }
     }
@@ -2624,6 +2654,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_request_command_json() != 46049) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_app_server_response_command_json() != 57703) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_apply_server_event_json() != 48658) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -2643,6 +2676,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_request() != 11717) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_app_server_response() != 25027) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_codex_island_client_ffi_checksum_method_engineruntime_enqueue_get_snapshot() != 19711) {

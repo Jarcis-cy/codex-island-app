@@ -28,7 +28,12 @@ class MainActivity : AppCompatActivity() {
                 pairingCode = binding.pairingCodeEditText.text?.toString().orEmpty()
             )
         }
-        binding.refreshButton.setOnClickListener { viewModel.refreshRuntime() }
+        binding.refreshButton.setOnClickListener {
+            viewModel.refreshRuntime(
+                deviceName = binding.deviceNameEditText.text?.toString().orEmpty(),
+                pairingCode = binding.pairingCodeEditText.text?.toString().orEmpty()
+            )
+        }
         binding.nextHostButton.setOnClickListener { viewModel.selectNextHost() }
         binding.startThreadButton.setOnClickListener { viewModel.startThread() }
         binding.nextThreadButton.setOnClickListener { viewModel.selectNextThread() }

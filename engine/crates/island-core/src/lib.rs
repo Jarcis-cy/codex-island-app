@@ -27,6 +27,7 @@ pub enum CommandKind {
     PairConfirm,
     PairRevoke,
     AppServerRequest,
+    AppServerResponse,
     AppServerInterrupt,
 }
 
@@ -280,6 +281,17 @@ impl ClientRuntime {
         }
     }
 
+    pub fn app_server_response_command(
+        &self,
+        request_id: impl Into<String>,
+        result: Value,
+    ) -> ClientCommand {
+        ClientCommand::AppServerResponse {
+            request_id: request_id.into(),
+            result,
+        }
+    }
+
     pub fn enqueue_get_snapshot(&mut self) -> u64 {
         self.enqueue_command(self.get_snapshot_command())
     }
@@ -322,6 +334,14 @@ impl ClientRuntime {
         self.enqueue_command(self.app_server_interrupt_command(thread_id, turn_id))
     }
 
+    pub fn enqueue_app_server_response(
+        &mut self,
+        request_id: impl Into<String>,
+        result: Value,
+    ) -> u64 {
+        self.enqueue_command(self.app_server_response_command(request_id, result))
+    }
+
     pub fn pop_next_command(&mut self) -> Option<ClientCommand> {
         if self.state.in_flight_command.is_some() {
             return None;
@@ -338,7 +358,9 @@ impl ClientRuntime {
         }
 
         let command = queued.command.clone();
-        self.state.in_flight_command = Some(queued);
+        if tracks_in_flight(queued.kind) {
+            self.state.in_flight_command = Some(queued);
+        }
         self.sync_queue_state();
         Some(command)
     }
@@ -568,6 +590,7 @@ fn command_kind(command: &ClientCommand) -> CommandKind {
         ClientCommand::PairConfirm { .. } => CommandKind::PairConfirm,
         ClientCommand::PairRevoke { .. } => CommandKind::PairRevoke,
         ClientCommand::AppServerRequest { .. } => CommandKind::AppServerRequest,
+        ClientCommand::AppServerResponse { .. } => CommandKind::AppServerResponse,
         ClientCommand::AppServerInterrupt { .. } => CommandKind::AppServerInterrupt,
     }
 }
@@ -580,6 +603,10 @@ fn should_retry_on_disconnect(kind: CommandKind) -> bool {
             | CommandKind::AppServerRequest
             | CommandKind::AppServerInterrupt
     )
+}
+
+fn tracks_in_flight(kind: CommandKind) -> bool {
+    !matches!(kind, CommandKind::AppServerResponse)
 }
 
 fn next_backoff_ms(current: u64) -> u64 {

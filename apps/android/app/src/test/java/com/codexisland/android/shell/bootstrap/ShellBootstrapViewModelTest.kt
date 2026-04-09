@@ -80,7 +80,7 @@ class ShellBootstrapViewModelTest {
         viewModel.sendMessage("please /approve apply_patch to config")
 
         assertTrue(viewModel.uiState.value?.approvalSummary?.contains("Command approval") == true)
-        assertTrue(runtime.lastActiveThreadId != null)
+        assertTrue(runtime.startedThread)
 
         viewModel.allowApproval()
         viewModel.interruptThread()
@@ -105,17 +105,19 @@ class ShellBootstrapViewModelTest {
 
     private class FakeRuntimeGateway : EngineRuntimeGateway {
         var lastHost: HostProfile? = null
-        var lastActiveThreadId: String? = null
+        var startedThread: Boolean = false
+        private var draftMessage: String = ""
+        private var threadStatus: String = "idle"
+        private var approvalSummary: String = "No pending approvals."
 
         override fun probe(
             hostProfile: HostProfile?,
             deviceName: String,
-            activeThreadId: String?,
-            activeTurnId: String?,
+            pairingCode: String,
             draftMessage: String,
         ): EngineRuntimeProbeResult {
             lastHost = hostProfile
-            lastActiveThreadId = activeThreadId
+            this.draftMessage = draftMessage
             return EngineRuntimeProbeResult(
                 runtimeLinked = true,
                 engineStatus = "ok",
@@ -136,9 +138,52 @@ class ShellBootstrapViewModelTest {
                 turnStartCommandPreview = "turn-start",
                 turnSteerCommandPreview = "turn-steer",
                 interruptCommandPreview = "interrupt",
-                nextSteps = "next"
+                nextSteps = "next",
+                authToken = hostProfile?.authToken,
+                pairingCode = pairingCode.ifBlank { hostProfile?.lastPairingCode },
+                threadListSummary = if (startedThread) "• active Thread 1  [$threadStatus]" else "No live threads yet.",
+                activeThreadSummary = if (startedThread) {
+                    "Thread 1\nthread-1\nstatus=$threadStatus · turn=turn-1"
+                } else {
+                    "尚未创建 thread。"
+                },
+                chatTranscript = if (draftMessage.isBlank()) "No chat yet." else "[user] $draftMessage",
+                approvalSummary = approvalSummary,
+                userInputSummary = "No pending user-input requests."
             )
         }
+
+        override fun refresh() = Unit
+
+        override fun startThread() {
+            startedThread = true
+            threadStatus = "active"
+        }
+
+        override fun selectNextThread() = Unit
+
+        override fun resumeThread() {
+            threadStatus = "resumed"
+        }
+
+        override fun sendMessage(message: String) {
+            draftMessage = message
+            if (message.contains("/approve")) {
+                approvalSummary = "Command approval\nNeed approval."
+                threadStatus = "waiting_approval"
+            }
+        }
+
+        override fun interruptThread() {
+            threadStatus = "interrupted"
+        }
+
+        override fun respondToApproval(allow: Boolean) {
+            approvalSummary = "No pending approvals."
+            threadStatus = if (allow) "active" else "idle"
+        }
+
+        override fun submitUserInput(answer: String) = Unit
     }
 
     private class FakeHostProfileEditor : HostProfileEditor {

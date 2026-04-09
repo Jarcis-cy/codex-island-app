@@ -86,6 +86,7 @@ pub enum CommandKind {
     PairConfirm,
     PairRevoke,
     AppServerRequest,
+    AppServerResponse,
     AppServerInterrupt,
 }
 
@@ -409,6 +410,33 @@ impl EngineRuntime {
             .enqueue_app_server_request(request_id, method, params))
     }
 
+    pub fn app_server_response_command_json(
+        &self,
+        request_id: String,
+        result_json: String,
+    ) -> Result<String, ClientRuntimeError> {
+        let result: Value = serde_json::from_str(&result_json)
+            .map_err(|error| ClientRuntimeError::InvalidJson(error.to_string()))?;
+        let runtime = self.inner.lock().expect("engine runtime mutex poisoned");
+        Ok(serialize_command(
+            runtime.app_server_response_command(request_id, result),
+        ))
+    }
+
+    pub fn enqueue_app_server_response(
+        &self,
+        request_id: String,
+        result_json: String,
+    ) -> Result<u64, ClientRuntimeError> {
+        let result: Value = serde_json::from_str(&result_json)
+            .map_err(|error| ClientRuntimeError::InvalidJson(error.to_string()))?;
+        Ok(self
+            .inner
+            .lock()
+            .expect("engine runtime mutex poisoned")
+            .enqueue_app_server_response(request_id, result))
+    }
+
     pub fn app_server_interrupt_command_json(&self, thread_id: String, turn_id: String) -> String {
         let runtime = self.inner.lock().expect("engine runtime mutex poisoned");
         serialize_command(runtime.app_server_interrupt_command(thread_id, turn_id))
@@ -543,6 +571,7 @@ impl From<CoreCommandKind> for CommandKind {
             CoreCommandKind::PairConfirm => Self::PairConfirm,
             CoreCommandKind::PairRevoke => Self::PairRevoke,
             CoreCommandKind::AppServerRequest => Self::AppServerRequest,
+            CoreCommandKind::AppServerResponse => Self::AppServerResponse,
             CoreCommandKind::AppServerInterrupt => Self::AppServerInterrupt,
         }
     }
