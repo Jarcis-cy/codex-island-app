@@ -11,8 +11,19 @@ if [[ "${1:-}" == "--strict" ]]; then
     STRICT=1
 fi
 
+java_home_is_supported() {
+    local candidate="$1"
+    local version_output major_version
+
+    [[ -x "$candidate/bin/java" ]] || return 1
+
+    version_output="$("$candidate/bin/java" -version 2>&1 | head -n 1)"
+    major_version="$(printf '%s\n' "$version_output" | sed -n 's/.*version "\([0-9][0-9]*\).*/\1/p')"
+    [[ "$major_version" == "17" || "$major_version" == "21" ]]
+}
+
 find_java_home() {
-    if [[ -n "${JAVA_HOME:-}" ]]; then
+    if [[ -n "${JAVA_HOME:-}" ]] && java_home_is_supported "${JAVA_HOME}"; then
         echo "$JAVA_HOME"
         return 0
     fi
@@ -48,6 +59,35 @@ find_android_sdk() {
     return 1
 }
 
+resolve_android_sdk_root() {
+    local candidate="$1"
+    local linked_root
+
+    if [[ -d "$candidate/platforms/android-35" || -d "$candidate/build-tools/35.0.0" || -d "$candidate/platform-tools" ]]; then
+        echo "$candidate"
+        return 0
+    fi
+
+    if [[ -L "$candidate/cmdline-tools/latest" ]] || [[ -d "$candidate/cmdline-tools/latest" ]]; then
+        linked_root="$(
+            python3 - "$candidate/cmdline-tools/latest" <<'PY'
+import os
+import sys
+
+path = sys.argv[1]
+real = os.path.realpath(path)
+print(os.path.dirname(os.path.dirname(real)))
+PY
+        )"
+        if [[ -n "$linked_root" ]]; then
+            echo "$linked_root"
+            return 0
+        fi
+    fi
+
+    echo "$candidate"
+}
+
 JAVA_HOME_VALUE="$(find_java_home || true)"
 if [[ -z "$JAVA_HOME_VALUE" ]]; then
     echo "missing supported JDK. Install JDK 17 or 21 and set JAVA_HOME." >&2
@@ -59,6 +99,8 @@ if [[ -z "$ANDROID_SDK_VALUE" ]]; then
     echo "missing Android SDK. Set ANDROID_SDK_ROOT or install Android Studio SDK components to ~/Library/Android/sdk." >&2
     exit 1
 fi
+
+ANDROID_SDK_VALUE="$(resolve_android_sdk_root "$ANDROID_SDK_VALUE")"
 
 mkdir -p "$ANDROID_DIR"
 printf 'sdk.dir=%s\n' "$ANDROID_SDK_VALUE" > "$LOCAL_PROPERTIES"
@@ -74,7 +116,7 @@ missing=()
 
 if (( ${#missing[@]} > 0 )); then
     echo "missing SDK components: ${missing[*]}" >&2
-    echo "install with sdkmanager: sdkmanager \"${missing[0]}\"${missing[@]:1:+ ...}" >&2
+    echo "install with sdkmanager under $ANDROID_SDK_VALUE" >&2
     if (( STRICT == 1 )); then
         exit 1
     fi
