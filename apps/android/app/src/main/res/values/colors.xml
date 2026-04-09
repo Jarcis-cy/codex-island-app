@@ -1,0 +1,10 @@
+<resources>
+    <color name="ci_background">#F3EFE7</color>
+    <color name="ci_surface">#FFFDF8</color>
+    <color name="ci_surface_alt">#E3ECE8</color>
+    <color name="ci_primary">#1D6B63</color>
+    <color name="ci_on_primary">#FFFFFF</color>
+    <color name="ci_text">#15212B</color>
+    <color name="ci_muted">#62707B</color>
+    <color name="ci_outline">#B9C2C8</color>
+</resources>

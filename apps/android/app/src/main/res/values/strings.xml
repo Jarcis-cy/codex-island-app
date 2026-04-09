@@ -1,4 +1,21 @@
 <resources>
     <string name="app_name">Codex Island</string>
-    <string name="bootstrap_message">Codex Island Android shell bootstrap.\n\nShared engine wiring comes next.</string>
+    <string name="shell_header_title">Android Direct Companion</string>
+    <string name="shell_header_kicker">Bootstrap workspace</string>
+    <string name="device_name_label">Device name</string>
+    <string name="auth_token_label">Auth token</string>
+    <string name="save_profile">Save secure profile</string>
+    <string name="refresh_runtime">Refresh runtime probe</string>
+    <string name="runtime_card_title">Engine bridge</string>
+    <string name="runtime_status_label">Runtime</string>
+    <string name="engine_status_label">Engine status</string>
+    <string name="binding_surface_label">Binding surface</string>
+    <string name="connection_label">Connection</string>
+    <string name="command_queue_label">Command queue</string>
+    <string name="paired_devices_label">Paired devices</string>
+    <string name="reconnect_label">Reconnect</string>
+    <string name="diagnostics_label">Diagnostics</string>
+    <string name="last_error_label">Last error</string>
+    <string name="hello_command_preview_label">Hello command preview</string>
+    <string name="next_steps_label">Next steps</string>
 </resources>

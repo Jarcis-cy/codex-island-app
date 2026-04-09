@@ -12,9 +12,9 @@ import org.junit.runner.RunWith
 @RunWith(AndroidJUnit4::class)
 class MainActivityInstrumentedTest {
     @Test
-    fun bootstrapMessageIsVisible() {
+    fun bootstrapWorkspaceIsVisible() {
         ActivityScenario.launch(MainActivity::class.java).use {
-            onView(withText(R.string.bootstrap_message)).check(matches(isDisplayed()))
+            onView(withText(R.string.shell_header_title)).check(matches(isDisplayed()))
         }
     }
 }
