@@ -19,7 +19,11 @@ final class SharedEngineRemoteSessionBackendTests: XCTestCase {
         )
 
         backend.startMonitoring()
-        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        waitUntil {
+            runtime.sentIntents == [.requestConnection, .getSnapshot] &&
+                backend.hostStates["host-1"] == .connecting &&
+                backend.threads.map(\.threadId) == ["thread-1"]
+        }
 
         XCTAssertEqual(runtime.sentIntents, [.requestConnection, .getSnapshot])
         XCTAssertEqual(backend.hostStates["host-1"], .connecting)
@@ -72,6 +76,22 @@ final class SharedEngineRemoteSessionBackendTests: XCTestCase {
 
         XCTAssertEqual(backend.hostStates["host-1"], .connected)
         XCTAssertEqual(backend.threads.first?.threadId, "thread-9")
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: @escaping @MainActor () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTFail("Condition not satisfied before timeout", file: file, line: line)
     }
 
     private static func makeRuntimeState(

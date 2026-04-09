@@ -24,7 +24,12 @@ final class CompositeRemoteSessionBackendTests: XCTestCase {
         secondary.threadsSubject.send([Self.makeThread(hostId: "local-app-server", threadId: "thread-local")])
         secondary.hostStatesSubject.send(["local-app-server": .connecting])
 
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        waitUntil {
+            backend.hosts.map(\.id) == ["remote-1", "local-app-server"] &&
+                backend.threads.map(\.threadId) == ["thread-remote", "thread-local"] &&
+                backend.hostStates["remote-1"] == .connected &&
+                backend.hostStates["local-app-server"] == .connecting
+        }
 
         XCTAssertEqual(backend.hosts.map(\.id), ["remote-1", "local-app-server"])
         XCTAssertEqual(backend.threads.map(\.threadId), ["thread-remote", "thread-local"])
@@ -47,7 +52,6 @@ final class CompositeRemoteSessionBackendTests: XCTestCase {
         secondary.hostsSubject.send([
             RemoteHostConfig(id: "local-app-server", name: "Local", sshTarget: "local-app-server", defaultCwd: "", isEnabled: true)
         ])
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
 
         _ = try await backend.openThread(hostId: "local-app-server", threadId: "thread-local")
         backend.addHost()
@@ -56,6 +60,22 @@ final class CompositeRemoteSessionBackendTests: XCTestCase {
         XCTAssertEqual(secondary.openThreadCalls.first?.threadId, "thread-local")
         XCTAssertEqual(primary.addHostCallCount, 1)
         XCTAssertTrue(primary.openThreadCalls.isEmpty)
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: @escaping @MainActor () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTFail("Condition not satisfied before timeout", file: file, line: line)
     }
 
     fileprivate static func makeThread(hostId: String, threadId: String) -> RemoteThreadState {

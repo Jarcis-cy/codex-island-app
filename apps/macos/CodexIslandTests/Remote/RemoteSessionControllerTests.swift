@@ -11,7 +11,9 @@ final class RemoteSessionControllerTests: XCTestCase {
         let controller = RemoteSessionController(backend: backend)
 
         backend.threadsSubject.send([Self.makeThread()])
-        RunLoop.main.run(until: Date().addingTimeInterval(0.05))
+        waitUntil {
+            controller.threads.map(\.threadId) == ["thread-1"]
+        }
 
         XCTAssertEqual(controller.threads.map(\.threadId), ["thread-1"])
     }
@@ -25,6 +27,22 @@ final class RemoteSessionControllerTests: XCTestCase {
         XCTAssertEqual(backend.openThreadCalls.count, 1)
         XCTAssertEqual(backend.openThreadCalls.first?.hostId, "host-1")
         XCTAssertEqual(backend.openThreadCalls.first?.threadId, "thread-1")
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 1,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ condition: @escaping @MainActor () -> Bool
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        XCTFail("Condition not satisfied before timeout", file: file, line: line)
     }
 
     fileprivate static func makeThread() -> RemoteThreadState {

@@ -8,15 +8,15 @@
 import Darwin
 import Foundation
 
-struct SSHConfigAliasDiscovery {
+nonisolated struct SSHConfigAliasDiscovery: Sendable {
     let fileManager: FileManager
 
-    func discoverAliases(from fileURL: URL) -> [String] {
+    nonisolated func discoverAliases(from fileURL: URL) -> [String] {
         var visitedPaths: Set<String> = []
         return discoverAliases(from: fileURL, visitedPaths: &visitedPaths)
     }
 
-    private func discoverAliases(from fileURL: URL, visitedPaths: inout Set<String>) -> [String] {
+    private nonisolated func discoverAliases(from fileURL: URL, visitedPaths: inout Set<String>) -> [String] {
         // OpenSSH allows recursive Include chains. Track normalized paths so loops or repeated
         // include fan-out do not duplicate aliases or recurse forever.
         let normalizedPath = fileURL.standardizedFileURL.path
@@ -65,7 +65,7 @@ struct SSHConfigAliasDiscovery {
         return aliases
     }
 
-    private func parseDirective(from rawLine: String) -> (String, String)? {
+    private nonisolated func parseDirective(from rawLine: String) -> (String, String)? {
         let line = stripComments(from: rawLine).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !line.isEmpty else { return nil }
 
@@ -77,7 +77,7 @@ struct SSHConfigAliasDiscovery {
         return (keyword, value)
     }
 
-    private func stripComments(from rawLine: String) -> String {
+    private nonisolated func stripComments(from rawLine: String) -> String {
         // SSH config comments start at "#" unless the character is protected by quoting. We keep
         // the parser minimal but quote-aware so Include paths and Host aliases survive intact.
         var result = ""
@@ -120,7 +120,7 @@ struct SSHConfigAliasDiscovery {
         return result
     }
 
-    private func tokenize(_ value: String) -> [String] {
+    private nonisolated func tokenize(_ value: String) -> [String] {
         // Host/Include directives accept space-separated tokens with basic shell-like quoting.
         // We only need enough parsing to preserve quoted aliases and include globs faithfully.
         var tokens: [String] = []
@@ -169,7 +169,7 @@ struct SSHConfigAliasDiscovery {
         return tokens
     }
 
-    private func isConcreteHostAlias(_ token: String) -> Bool {
+    private nonisolated func isConcreteHostAlias(_ token: String) -> Bool {
         let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
         guard !trimmed.contains("*"), !trimmed.contains("?") else { return false }
@@ -177,7 +177,7 @@ struct SSHConfigAliasDiscovery {
         return true
     }
 
-    private func resolveIncludePatterns(_ pattern: String, relativeTo fileURL: URL) -> [URL] {
+    private nonisolated func resolveIncludePatterns(_ pattern: String, relativeTo fileURL: URL) -> [URL] {
         guard !pattern.isEmpty else { return [] }
 
         let expandedPattern = NSString(string: pattern).expandingTildeInPath

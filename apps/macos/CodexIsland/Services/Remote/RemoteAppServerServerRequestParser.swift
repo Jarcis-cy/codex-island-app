@@ -7,10 +7,10 @@
 
 import Foundation
 
-struct RemoteAppServerServerRequestParser {
+nonisolated struct RemoteAppServerServerRequestParser: Sendable {
     let hostId: String
 
-    func commandApproval(requestId: RemoteRPCID, params: Any) -> RemotePendingApproval? {
+    nonisolated func commandApproval(requestId: RemoteRPCID, params: Any) -> RemotePendingApproval? {
         guard let params = params as? [String: Any],
               let threadId = params["threadId"] as? String,
               let turnId = params["turnId"] as? String,
@@ -36,7 +36,7 @@ struct RemoteAppServerServerRequestParser {
         )
     }
 
-    func fileApproval(requestId: RemoteRPCID, params: Any) -> RemotePendingApproval? {
+    nonisolated func fileApproval(requestId: RemoteRPCID, params: Any) -> RemotePendingApproval? {
         guard let params = params as? [String: Any],
               let threadId = params["threadId"] as? String,
               let turnId = params["turnId"] as? String,
@@ -58,7 +58,7 @@ struct RemoteAppServerServerRequestParser {
         )
     }
 
-    func permissionsApproval(requestId: RemoteRPCID, params: Any) -> RemotePendingApproval? {
+    nonisolated func permissionsApproval(requestId: RemoteRPCID, params: Any) -> RemotePendingApproval? {
         guard let params = params as? [String: Any],
               let threadId = params["threadId"] as? String,
               let turnId = params["turnId"] as? String,
@@ -80,7 +80,7 @@ struct RemoteAppServerServerRequestParser {
         )
     }
 
-    func userInputRequest(
+    nonisolated func userInputRequest(
         requestId: RemoteRPCID,
         params: Any
     ) -> (threadId: String, interaction: PendingUserInputInteraction)? {
@@ -128,7 +128,7 @@ struct RemoteAppServerServerRequestParser {
         )
     }
 
-    func permissionGrantPayload(from profile: InteractionPermissionProfile) -> [String: Any] {
+    nonisolated func permissionGrantPayload(from profile: InteractionPermissionProfile) -> [String: Any] {
         var payload: [String: Any] = [:]
         if let networkEnabled = profile.networkEnabled {
             payload["network"] = ["enabled": networkEnabled]
@@ -146,7 +146,7 @@ struct RemoteAppServerServerRequestParser {
         return payload
     }
 
-    private func commandApprovalActions(_ value: Any?) -> [PendingApprovalAction]? {
+    private nonisolated func commandApprovalActions(_ value: Any?) -> [PendingApprovalAction]? {
         guard let rawActions = value as? [Any] else { return nil }
         let actions = rawActions.compactMap { raw -> PendingApprovalAction? in
             if let raw = raw as? String {
@@ -176,7 +176,7 @@ struct RemoteAppServerServerRequestParser {
         return actions.isEmpty ? nil : actions
     }
 
-    private func permissionProfile(_ value: [String: Any]?) -> InteractionPermissionProfile {
+    private nonisolated func permissionProfile(_ value: [String: Any]?) -> InteractionPermissionProfile {
         guard let value else { return .none }
         let network = value["network"] as? [String: Any]
         let fileSystem = value["fileSystem"] as? [String: Any]

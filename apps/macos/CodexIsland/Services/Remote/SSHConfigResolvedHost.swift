@@ -7,14 +7,14 @@
 
 import Foundation
 
-struct SSHConfigResolvedHost: Equatable, Sendable {
+nonisolated struct SSHConfigResolvedHost: Equatable, Sendable {
     var hostname: String?
     var user: String?
     var port: Int?
 }
 
-struct SSHConfigResolvedHostParser {
-    func parse(_ output: String) -> SSHConfigResolvedHost {
+nonisolated struct SSHConfigResolvedHostParser: Sendable {
+    nonisolated func parse(_ output: String) -> SSHConfigResolvedHost {
         var resolved = SSHConfigResolvedHost()
 
         for rawLine in output.components(separatedBy: .newlines) {
