@@ -881,6 +881,80 @@ mod tests {
         codex_app_server_command,
     };
 
+    struct FakeAppServerHarness {
+        hostd: HostDaemon,
+    }
+
+    impl FakeAppServerHarness {
+        fn new(script: &str) -> Self {
+            let temp = unique_temp_dir("hostd-harness");
+            let mut hostd = HostDaemon::new(HostDaemonConfig {
+                host_id: "host-harness".into(),
+                hostname: "devbox".into(),
+                platform: HostPlatform::Macos,
+                spawn: SpawnConfig::new("/bin/sh").args(["-c", script]),
+                state_dir: temp.join("state"),
+            });
+            hostd.start();
+
+            let pairing_code = match &hostd.handle_command(ClientCommand::PairStart {
+                device_name: "Harness Device".into(),
+                client_platform: "android".into(),
+            })[0]
+            {
+                ServerEvent::PairingStarted { pairing } => pairing.pairing_code.clone(),
+                other => panic!("unexpected pair start: {other:?}"),
+            };
+            let token = match &hostd.handle_command(ClientCommand::PairConfirm {
+                pairing_code,
+                device_name: "Harness Device".into(),
+                client_platform: "android".into(),
+            })[0]
+            {
+                ServerEvent::PairingCompleted { token, .. } => token.bearer_token.clone(),
+                other => panic!("unexpected pair complete: {other:?}"),
+            };
+            let hello = hostd.handle_command(ClientCommand::Hello {
+                protocol_version: "v1".into(),
+                client_name: "shell".into(),
+                client_version: "0.1.0".into(),
+                auth_token: Some(token),
+            });
+            assert!(matches!(
+                &hello[0],
+                ServerEvent::HelloAck { authenticated, .. } if *authenticated
+            ));
+
+            Self { hostd }
+        }
+
+        fn send_request(&mut self, request_id: &str, method: &str, params: serde_json::Value) {
+            let events = self.hostd.handle_command(ClientCommand::AppServerRequest {
+                request_id: request_id.into(),
+                method: method.into(),
+                params,
+            });
+            assert!(events.is_empty(), "unexpected request events: {events:?}");
+        }
+
+        fn interrupt(&mut self, thread_id: &str, turn_id: &str) {
+            let events = self
+                .hostd
+                .handle_command(ClientCommand::AppServerInterrupt {
+                    thread_id: thread_id.into(),
+                    turn_id: turn_id.into(),
+                });
+            assert!(events.is_empty(), "unexpected interrupt events: {events:?}");
+        }
+
+        fn poll_until<F>(&mut self, timeout: Duration, predicate: F) -> Vec<ServerEvent>
+        where
+            F: Fn(&[ServerEvent]) -> bool,
+        {
+            wait_for_poll_events_until(&mut self.hostd, timeout, predicate)
+        }
+    }
+
     #[test]
     fn codex_command_uses_login_shell_stdio_contract() {
         let config = codex_app_server_command(Path::new("/bin/zsh"));
@@ -1124,6 +1198,112 @@ mod tests {
             snapshot.health.app_server.last_error.as_deref(),
             Some("boom")
         );
+    }
+
+    #[test]
+    fn harness_covers_thread_list_send_and_interrupt_flow() {
+        let script = "while IFS= read -r line; do \
+            case \"$line\" in \
+              *'\"method\":\"thread/list\"'*) \
+                printf '{\"id\":\"req-list\",\"result\":{\"threads\":[{\"id\":\"thread-1\",\"title\":\"Inbox\"}]}}\\n' ;; \
+              *'\"method\":\"turn/start\"'*) \
+                printf '{\"id\":\"req-send\",\"result\":{\"accepted\":true}}\\n'; \
+                printf '{\"method\":\"turn/started\",\"params\":{\"threadId\":\"thread-1\",\"turnId\":\"turn-1\"}}\\n' ;; \
+              *'\"method\":\"turn/interrupt\"'*) \
+                printf '{\"id\":\"interrupt-thread-1-turn-1\",\"result\":{\"ok\":true}}\\n'; \
+                printf '{\"method\":\"turn/interrupted\",\"params\":{\"threadId\":\"thread-1\",\"turnId\":\"turn-1\"}}\\n'; \
+                break ;; \
+            esac; \
+        done";
+        let mut harness = FakeAppServerHarness::new(script);
+
+        harness.send_request("req-list", "thread/list", json!({"limit": 100}));
+        harness.send_request(
+            "req-send",
+            "turn/start",
+            json!({"threadId": "thread-1", "input": [{"type": "text", "text": "hello"}]}),
+        );
+        harness.interrupt("thread-1", "turn-1");
+
+        let events = harness.poll_until(Duration::from_secs(2), |events| {
+            events.iter().any(|event| {
+                matches!(
+                    event,
+                    ServerEvent::AppServerEvent { payload, .. }
+                    if payload["method"] == json!("turn/interrupted")
+                )
+            })
+        });
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerResponse { request_id, result }
+            if request_id == "req-list" && result["threads"][0]["id"] == json!("thread-1")
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerResponse { request_id, result }
+            if request_id == "req-send" && result["accepted"] == json!(true)
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerEvent { payload, .. }
+            if payload["method"] == json!("turn/started")
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerEvent { payload, .. }
+            if payload["method"] == json!("turn/interrupted")
+        )));
+    }
+
+    #[test]
+    fn harness_covers_approval_and_request_user_input_events() {
+        let script = "while IFS= read -r line; do \
+            case \"$line\" in \
+              *'\"method\":\"turn/start\"'*) \
+                printf '{\"id\":\"req-approval\",\"result\":{\"accepted\":true}}\\n'; \
+                printf '{\"method\":\"item/commandExecution/requestApproval\",\"params\":{\"threadId\":\"thread-1\",\"command\":\"git push\"}}\\n'; \
+                printf '{\"method\":\"item/tool/requestUserInput\",\"params\":{\"threadId\":\"thread-1\",\"question\":\"choose\"}}\\n'; \
+                break ;; \
+            esac; \
+        done";
+        let mut harness = FakeAppServerHarness::new(script);
+
+        harness.send_request(
+            "req-approval",
+            "turn/start",
+            json!({"threadId": "thread-1", "input": [{"type": "text", "text": "deploy"}]}),
+        );
+
+        let events = harness.poll_until(Duration::from_secs(2), |events| {
+            let saw_approval = events.iter().any(|event| {
+                matches!(
+                    event,
+                    ServerEvent::AppServerEvent { payload, .. }
+                    if payload["method"] == json!("item/commandExecution/requestApproval")
+                )
+            });
+            let saw_input = events.iter().any(|event| {
+                matches!(
+                    event,
+                    ServerEvent::AppServerEvent { payload, .. }
+                    if payload["method"] == json!("item/tool/requestUserInput")
+                )
+            });
+            saw_approval && saw_input
+        });
+
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerEvent { payload, .. }
+            if payload["method"] == json!("item/commandExecution/requestApproval")
+        )));
+        assert!(events.iter().any(|event| matches!(
+            event,
+            ServerEvent::AppServerEvent { payload, .. }
+            if payload["method"] == json!("item/tool/requestUserInput")
+        )));
     }
 
     #[test]
