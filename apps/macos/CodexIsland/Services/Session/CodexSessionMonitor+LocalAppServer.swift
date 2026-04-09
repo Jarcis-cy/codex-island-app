@@ -367,6 +367,6 @@ extension CodexSessionMonitor {
     }
 
     static func makeLocalAppServerMonitor() -> any RemoteSessionControlling {
-        SharedEngineRemoteSessionBackend(localHost: localAppServerHost)
+        SharedEngineRemoteSessionBackendRegistry.localAppServer
     }
 }

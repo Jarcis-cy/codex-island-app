@@ -53,7 +53,13 @@ protocol RemoteSessionControlling: AnyObject {
 
 @MainActor
 final class RemoteSessionController: ObservableObject {
-    static let shared = RemoteSessionController(backend: RemoteSessionMonitor.shared)
+    static let shared = RemoteSessionController(
+        backend: CompositeRemoteSessionBackend(
+            primary: RemoteSessionMonitor.shared,
+            secondary: SharedEngineRemoteSessionBackendRegistry.localAppServer,
+            secondaryHostIDs: [CodexSessionMonitor.localAppServerHost.id]
+        )
+    )
 
     @Published private(set) var hosts: [RemoteHostConfig] = []
     @Published private(set) var threads: [RemoteThreadState] = []
