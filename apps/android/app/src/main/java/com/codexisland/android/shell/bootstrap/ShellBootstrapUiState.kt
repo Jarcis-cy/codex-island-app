@@ -2,7 +2,10 @@ package com.codexisland.android.shell.bootstrap
 
 data class ShellBootstrapUiState(
     val deviceName: String,
+    val hostConnectionInput: String,
+    val hostDisplayName: String,
     val authToken: String,
+    val pairingCode: String,
     val subtitle: String,
     val runtimeStatus: String,
     val engineStatus: String,
@@ -14,6 +17,11 @@ data class ShellBootstrapUiState(
     val diagnostics: String,
     val lastError: String,
     val helloCommandPreview: String,
+    val pairStartPreview: String,
+    val pairConfirmPreview: String,
+    val reconnectPreview: String,
     val nextSteps: String,
     val authTokenHelper: String,
+    val hostProfilesSummary: String,
+    val activeHostSummary: String,
 )

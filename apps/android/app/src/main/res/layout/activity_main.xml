@@ -74,6 +74,51 @@
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/hostConnectionInputLayout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:hint="@string/host_connection_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/hostConnectionEditText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textUri" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/hostDisplayNameInputLayout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:hint="@string/host_display_name_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/hostDisplayNameEditText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textCapWords|textPersonName" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:id="@+id/pairingCodeInputLayout"
+                    style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:hint="@string/pairing_code_label">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/pairingCodeEditText"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:inputType="textNoSuggestions|textVisiblePassword" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <com.google.android.material.textfield.TextInputLayout
                     android:id="@+id/authTokenInputLayout"
                     style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
                     android:layout_width="match_parent"
@@ -95,12 +140,12 @@
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/saveButton"
+                        android:id="@+id/saveHostButton"
                         style="@style/Widget.Material3.Button"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:text="@string/save_profile" />
+                        android:text="@string/save_host" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/refreshButton"
@@ -111,6 +156,14 @@
                         android:layout_weight="1"
                         android:text="@string/refresh_runtime" />
                 </LinearLayout>
+
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/nextHostButton"
+                    style="@style/Widget.Material3.Button.TextButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="@string/next_host" />
             </LinearLayout>
         </com.google.android.material.card.MaterialCardView>
 
@@ -155,6 +208,35 @@
                         android:textColor="@color/ci_primary"
                         android:textStyle="bold" />
                 </LinearLayout>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="@string/active_host_label"
+                    android:textColor="@color/ci_muted"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/activeHostSummaryValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:textColor="@color/ci_text" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/host_profiles_label"
+                    android:textColor="@color/ci_muted"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/hostProfilesValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:lineSpacingExtra="2dp"
+                    android:textColor="@color/ci_text" />
 
                 <TextView
                     android:id="@+id/engineStatusValue"
@@ -275,6 +357,50 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:fontFamily="monospace"
+                    android:textColor="@color/ci_text" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/pair_start_preview_label"
+                    android:textColor="@color/ci_muted"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/pairStartPreviewValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/ci_text" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/pair_confirm_preview_label"
+                    android:textColor="@color/ci_muted"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/pairConfirmPreviewValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:textColor="@color/ci_text" />
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    android:text="@string/reconnect_preview_label"
+                    android:textColor="@color/ci_muted"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/reconnectPreviewValue"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
                     android:textColor="@color/ci_text" />
 
                 <TextView

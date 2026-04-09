@@ -3,9 +3,16 @@
     <string name="shell_header_title">Android Direct Companion</string>
     <string name="shell_header_kicker">Bootstrap workspace</string>
     <string name="device_name_label">Device name</string>
+    <string name="host_connection_label">Host address or QR payload</string>
+    <string name="host_display_name_label">Host display name</string>
     <string name="auth_token_label">Auth token</string>
-    <string name="save_profile">Save secure profile</string>
+    <string name="pairing_code_label">Pairing code</string>
+    <string name="save_host">Save host profile</string>
     <string name="refresh_runtime">Refresh runtime probe</string>
+    <string name="next_host">Next host</string>
+    <string name="host_card_title">Host pairing and profiles</string>
+    <string name="active_host_label">Active host</string>
+    <string name="host_profiles_label">Saved profiles</string>
     <string name="runtime_card_title">Engine bridge</string>
     <string name="runtime_status_label">Runtime</string>
     <string name="engine_status_label">Engine status</string>
@@ -17,5 +24,8 @@
     <string name="diagnostics_label">Diagnostics</string>
     <string name="last_error_label">Last error</string>
     <string name="hello_command_preview_label">Hello command preview</string>
+    <string name="pair_start_preview_label">Pair start preview</string>
+    <string name="pair_confirm_preview_label">Pair confirm preview</string>
+    <string name="reconnect_preview_label">Reconnect entry point</string>
     <string name="next_steps_label">Next steps</string>
 </resources>
