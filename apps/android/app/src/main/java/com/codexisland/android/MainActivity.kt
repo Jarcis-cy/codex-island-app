@@ -1,17 +1,40 @@
 package com.codexisland.android
 
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.ViewModelProvider
 import com.codexisland.android.databinding.ActivityMainBinding
 import com.codexisland.android.shell.bootstrap.ShellBootstrapUiState
 import com.codexisland.android.shell.bootstrap.ShellBootstrapViewModel
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private var connectionPanelExpanded = false
+    private var debugPanelExpanded = false
+    private val uiRefreshHandler = Handler(Looper.getMainLooper())
+    private val uiRefreshRunnable = object : Runnable {
+        override fun run() {
+            viewModel.captureDraftForm(
+                deviceName = binding.deviceNameEditText.text?.toString().orEmpty(),
+                hostConnectionInput = binding.hostConnectionEditText.text?.toString().orEmpty(),
+                hostDisplayName = binding.hostDisplayNameEditText.text?.toString().orEmpty(),
+                authToken = binding.authTokenEditText.text?.toString().orEmpty(),
+                sshPassword = binding.sshPasswordEditText.text?.toString().orEmpty(),
+                pairingCode = binding.pairingCodeEditText.text?.toString().orEmpty(),
+                message = binding.messageEditText.text?.toString().orEmpty(),
+                userInputAnswer = binding.userInputAnswerEditText.text?.toString().orEmpty()
+            )
+            viewModel.refreshUiSnapshot()
+            uiRefreshHandler.postDelayed(this, UI_REFRESH_INTERVAL_MS)
+        }
+    }
 
     private val viewModel: ShellBootstrapViewModel by viewModels {
-        ShellBootstrapViewModel.factory(applicationContext)
+        MainActivityTestOverrides.viewModelFactory
+            ?: ShellBootstrapViewModel.factory(applicationContext)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -35,6 +58,14 @@ class MainActivity : AppCompatActivity() {
                 pairingCode = binding.pairingCodeEditText.text?.toString().orEmpty()
             )
         }
+        binding.toggleConnectionButton.setOnClickListener {
+            connectionPanelExpanded = !connectionPanelExpanded
+            render(viewModel.uiState.value ?: return@setOnClickListener)
+        }
+        binding.toggleDebugButton.setOnClickListener {
+            debugPanelExpanded = !debugPanelExpanded
+            render(viewModel.uiState.value ?: return@setOnClickListener)
+        }
         binding.nextHostButton.setOnClickListener { viewModel.selectNextHost() }
         binding.generateSshKeyButton.setOnClickListener { viewModel.generateSshKeyPair() }
         binding.startThreadButton.setOnClickListener { viewModel.startThread() }
@@ -53,7 +84,21 @@ class MainActivity : AppCompatActivity() {
         viewModel.uiState.observe(this, ::render)
     }
 
+    override fun onStart() {
+        super.onStart()
+        uiRefreshHandler.post(uiRefreshRunnable)
+    }
+
+    override fun onStop() {
+        uiRefreshHandler.removeCallbacks(uiRefreshRunnable)
+        super.onStop()
+    }
+
     private fun render(state: ShellBootstrapUiState) {
+        val hasPendingApproval = state.approvalSummary.isNotBlank() && !state.approvalSummary.contains("当前没有待处理审批")
+        val hasPendingUserInput = state.userInputSummary.isNotBlank() && !state.userInputSummary.contains("当前没有待补充输入")
+        val shouldShowConnectionPanel = connectionPanelExpanded || state.activeHostSummary.contains("还没有保存主机")
+
         syncText(binding.deviceNameEditText.text?.toString(), state.deviceName, binding.deviceNameEditText.isFocused) {
             binding.deviceNameEditText.setText(it)
         }
@@ -70,7 +115,7 @@ class MainActivity : AppCompatActivity() {
             binding.hostDisplayNameEditText.setText(it)
         }
         syncText(binding.pairingCodeEditText.text?.toString(), state.pairingCode, binding.pairingCodeEditText.isFocused) {
-        binding.pairingCodeEditText.setText(it)
+            binding.pairingCodeEditText.setText(it)
         }
         syncText(binding.messageEditText.text?.toString(), state.messageDraft, binding.messageEditText.isFocused) {
             binding.messageEditText.setText(it)
@@ -80,6 +125,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         binding.shellSubtitle.text = state.subtitle
+        binding.approvalCard.visibility = if (hasPendingApproval) android.view.View.VISIBLE else android.view.View.GONE
+        binding.userInputCard.visibility = if (hasPendingUserInput) android.view.View.VISIBLE else android.view.View.GONE
+        binding.connectionPanel.visibility = if (shouldShowConnectionPanel) android.view.View.VISIBLE else android.view.View.GONE
+        binding.debugPanel.visibility = if (debugPanelExpanded) android.view.View.VISIBLE else android.view.View.GONE
+        binding.toggleConnectionButton.setText(
+            if (shouldShowConnectionPanel) R.string.connection_panel_hide_cta else R.string.connection_panel_cta
+        )
+        binding.toggleDebugButton.setText(
+            if (debugPanelExpanded) R.string.debug_panel_hide_cta else R.string.debug_panel_cta
+        )
         binding.hostConnectionInputLayout.helperText = state.hostConnectionHelper
         binding.authTokenInputLayout.hint = getString(R.string.hostd_auth_token_label)
         binding.authTokenInputLayout.helperText = state.hostdAuthTokenHelper
@@ -129,3 +184,10 @@ class MainActivity : AppCompatActivity() {
         }
     }
 }
+
+object MainActivityTestOverrides {
+    @Volatile
+    var viewModelFactory: ViewModelProvider.Factory? = null
+}
+
+private const val UI_REFRESH_INTERVAL_MS = 1_000L

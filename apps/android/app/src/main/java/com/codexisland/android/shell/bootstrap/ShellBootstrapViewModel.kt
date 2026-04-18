@@ -23,6 +23,8 @@ class ShellBootstrapViewModel(
     private var draftDeviceName: String = ""
     private var draftHostConnectionInput: String = ""
     private var draftHostDisplayName: String = ""
+    private var draftAuthToken: String = ""
+    private var draftSshPassword: String = ""
     private var draftPairingCode: String = ""
     private var draftMessage: String = ""
     private var draftUserInputAnswer: String = ""
@@ -52,6 +54,8 @@ class ShellBootstrapViewModel(
         draftDeviceName = updated.deviceName
         draftHostConnectionInput = updated.activeHost()?.hostAddress.orEmpty()
         draftHostDisplayName = updated.activeHost()?.displayName.orEmpty()
+        draftAuthToken = updated.activeHost()?.authToken.orEmpty()
+        draftSshPassword = updated.activeHost()?.sshPassword.orEmpty()
         draftPairingCode = updated.activeHost()?.lastPairingCode.orEmpty()
         _uiState.value = renderState(updated)
     }
@@ -68,6 +72,8 @@ class ShellBootstrapViewModel(
         profileStore.save(updated)
         draftHostConnectionInput = nextHost.hostAddress
         draftHostDisplayName = nextHost.displayName
+        draftAuthToken = nextHost.authToken.orEmpty()
+        draftSshPassword = nextHost.sshPassword.orEmpty()
         draftPairingCode = nextHost.lastPairingCode.orEmpty()
         _uiState.value = renderState(updated)
     }
@@ -81,6 +87,30 @@ class ShellBootstrapViewModel(
         _uiState.value = renderState(profileStore.load())
         runtimeGateway.refresh()
         _uiState.value = renderState(profileStore.load())
+    }
+
+    fun refreshUiSnapshot() {
+        _uiState.value = renderState(profileStore.load())
+    }
+
+    fun captureDraftForm(
+        deviceName: String,
+        hostConnectionInput: String,
+        hostDisplayName: String,
+        authToken: String,
+        sshPassword: String,
+        pairingCode: String,
+        message: String,
+        userInputAnswer: String,
+    ) {
+        draftDeviceName = deviceName
+        draftHostConnectionInput = hostConnectionInput
+        draftHostDisplayName = hostDisplayName
+        draftAuthToken = authToken
+        draftSshPassword = sshPassword
+        draftPairingCode = pairingCode
+        draftMessage = message
+        draftUserInputAnswer = userInputAnswer
     }
 
     fun startThread() {
@@ -176,6 +206,12 @@ class ShellBootstrapViewModel(
         if (draftHostDisplayName.isBlank()) {
             draftHostDisplayName = activeHost?.displayName.orEmpty()
         }
+        if (draftAuthToken.isBlank()) {
+            draftAuthToken = activeHost?.authToken.orEmpty()
+        }
+        if (draftSshPassword.isBlank()) {
+            draftSshPassword = activeHost?.sshPassword.orEmpty()
+        }
         draftPairingCode = runtime.pairingCode ?: activeHost?.lastPairingCode.orEmpty()
 
         val connectionMode = activeHost?.let { SecureShellStore.inferConnectionMode(it.hostAddress) }
@@ -190,29 +226,29 @@ class ShellBootstrapViewModel(
         }
         val authSecretHelper = if (connectionMode == HostConnectionMode.SSH_DIRECT_APP_SERVER) {
             if (!activeHost?.sshPublicKey.isNullOrBlank()) {
-                "已生成 SSH key。可复制下方命令到远端追加 authorized_keys；SSH password 仅作兜底。"
+                "已生成 SSH 密钥。可复制下方命令到远端追加 authorized_keys；SSH 密码仅作兜底。"
             } else {
-                "SSH direct 模式支持 password 或公钥。可一键生成密钥对，并复制命令到远端追加 authorized_keys。"
+                "SSH 直连支持密码或公钥。可一键生成密钥对，并复制命令到远端追加 authorized_keys。"
             }
         } else if (runtime.authToken.isNullOrBlank()) {
-            "Auth token 可留空。Refresh 会先发起 pair_start；填入 pairing code 后再次 Refresh 会执行 pair_confirm。"
+            "访问令牌可留空。点击重新连接会先发起 pair_start；填入配对码后再次连接会执行 pair_confirm。"
         } else {
-            "当前 host 已保存 auth token，可直接作为 reconnect 入口。"
+            "当前主机已保存访问令牌，可直接作为重连入口。"
         }
         val hostConnectionHelper = if (connectionMode == HostConnectionMode.SSH_DIRECT_APP_SERVER) {
-            "SSH direct: 填 `ssh://user@host` 或 `user@host`。Android 会直接 SSH 拉起远端 codex app-server。"
+            "SSH 直连：填写 `ssh://user@host` 或 `user@host`。应用会直接通过 SSH 拉起远端 codex app-server。"
         } else {
-            "hostd websocket: 填 `host:7331`、`ws://...`，或粘贴 `codex-island://...` QR payload。"
+            "Hostd WebSocket：填写 `host:7331`、`ws://...`，或粘贴 `codex-island://...` 配对口令。"
         }
         val showHostdAuthToken = connectionMode == HostConnectionMode.HOSTD_WEBSOCKET
         val showSshPassword = connectionMode == HostConnectionMode.SSH_DIRECT_APP_SERVER
         val sshPublicKey = activeHost?.sshPublicKey.orEmpty()
         val sshKeyStatus = if (connectionMode != HostConnectionMode.SSH_DIRECT_APP_SERVER) {
-            "当前 host 不使用 SSH direct。"
+            "当前主机未使用 SSH 直连。"
         } else if (sshPublicKey.isBlank()) {
-            "尚未生成 SSH key。"
+            "尚未生成 SSH 密钥。"
         } else {
-            "已生成 SSH key，可直接复制命令到远端主机。"
+            "已生成 SSH 密钥，可直接复制命令到远端主机。"
         }
         val sshInstallCommand = activeHost?.let { buildSshInstallCommand(it, effectiveProfile.deviceName) }.orEmpty()
 
@@ -221,8 +257,8 @@ class ShellBootstrapViewModel(
             hostConnectionInput = draftHostConnectionInput,
             hostConnectionHelper = hostConnectionHelper,
             hostDisplayName = draftHostDisplayName,
-            hostdAuthToken = runtime.authToken ?: activeHost?.authToken.orEmpty(),
-            sshPassword = activeHost?.sshPassword.orEmpty(),
+            hostdAuthToken = runtime.authToken ?: activeHost?.authToken ?: draftAuthToken,
+            sshPassword = activeHost?.sshPassword ?: draftSshPassword,
             showHostdAuthToken = showHostdAuthToken,
             showSshPassword = showSshPassword,
             pairingCode = draftPairingCode,
@@ -231,9 +267,9 @@ class ShellBootstrapViewModel(
             messageDraft = draftMessage,
             userInputDraft = draftUserInputAnswer,
             subtitle = if (connectionMode == HostConnectionMode.SSH_DIRECT_APP_SERVER) {
-                "当前 host 将按 macOS 远程模式通过 SSH 拉起 codex app-server，不再要求你预先手动启动 hostd。"
+                "接上 Linux 或 macOS 主机后，就能像聊天应用一样继续同一个会话；SSH 模式会自动拉起远端 codex app-server。"
             } else {
-                "当前面板已直接对接 live hostd websocket；保存 host 后可走 pairing、thread/chat、approval、request_user_input 和 interrupt 的真实链路。"
+                "连上 hostd 之后，就可以开始或恢复会话；审批、补充输入和中断都会直接回到这里处理。"
             },
             runtimeStatus = runtimeState,
             engineStatus = runtime.engineStatus,
@@ -262,7 +298,7 @@ class ShellBootstrapViewModel(
             sshInstallCommand = sshInstallCommand,
             hostProfilesSummary = effectiveProfile.hosts.summary(activeHost?.id),
             activeHostSummary = activeHost?.let(::describeHost)
-                ?: "尚未保存 host profile。可输入 Tailscale hostd 地址，例如 `macbook.tail.ts.net:7331`，或直接输入 `ssh://user@host` 走 SSH direct 模式。",
+                ?: "还没有保存主机。可以输入 Tailscale hostd 地址，例如 `macbook.tail.ts.net:7331`，或直接输入 `ssh://user@host` 走 SSH 直连。",
             threadListSummary = runtime.threadListSummary,
             activeThreadSummary = runtime.activeThreadSummary,
             chatTranscript = runtime.chatTranscript,
@@ -305,17 +341,17 @@ class ShellBootstrapViewModel(
 
     private fun List<HostProfile>.summary(activeHostId: String?): String {
         if (isEmpty()) {
-            return "No saved hosts yet."
+            return "还没有保存任何主机。"
         }
 
         return joinToString("\n") { host ->
             val marker = if (host.id == activeHostId) "• active" else "• saved"
             val authState = if (SecureShellStore.inferConnectionMode(host.hostAddress) == HostConnectionMode.SSH_DIRECT_APP_SERVER) {
-                if (host.sshPublicKey.isNullOrBlank()) "ssh key missing" else "ssh key ready"
+                if (host.sshPublicKey.isNullOrBlank()) "SSH 密钥未生成" else "SSH 密钥已就绪"
             } else if (host.authToken.isNullOrBlank()) {
-                "pairing pending"
+                "等待配对"
             } else {
-                "paired token stored"
+                "已保存访问令牌"
             }
             "$marker ${host.displayName}  ${host.hostAddress}  [$authState]"
         }
@@ -324,8 +360,8 @@ class ShellBootstrapViewModel(
     private fun describeHost(host: HostProfile): String {
         val authState = if (SecureShellStore.inferConnectionMode(host.hostAddress) == HostConnectionMode.SSH_DIRECT_APP_SERVER) {
             when {
-                !host.sshPublicKey.isNullOrBlank() -> "SSH key 已生成"
-                !host.sshPassword.isNullOrBlank() -> "SSH password 已保存"
+                !host.sshPublicKey.isNullOrBlank() -> "SSH 密钥已生成"
+                !host.sshPassword.isNullOrBlank() -> "SSH 密码已保存"
                 else -> "SSH 凭据未配置"
             }
         } else if (host.authToken.isNullOrBlank()) {

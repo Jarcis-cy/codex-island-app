@@ -1,9 +1,11 @@
 package com.codexisland.android.shell.runtime
 
+import android.util.Log
 import com.codexisland.android.shell.storage.HostProfile
 import com.codexisland.android.shell.storage.HostConnectionMode
 import com.codexisland.android.shell.storage.GeneratedSshKeyPair
 import com.codexisland.android.shell.storage.SecureShellStore
+import net.schmizz.sshj.DefaultSecurityProviderConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.connection.channel.direct.Session
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
@@ -22,6 +24,7 @@ import uniffi.codex_island_client.EngineRuntimeState
 import uniffi.codex_island_client.QueuedCommandRecord
 import uniffi.codex_island_client.uniffiEnsureInitialized
 import java.util.LinkedHashMap
+import java.util.concurrent.RejectedExecutionException
 import java.util.UUID
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledExecutorService
@@ -530,7 +533,7 @@ class UniffiEngineRuntimeGateway(
             request,
             object : WebSocketListener() {
                 override fun onOpen(webSocket: WebSocket, response: Response) {
-                    scheduler.execute {
+                    runOnScheduler {
                         synchronized(lock) {
                             if (socket !== webSocket) {
                                 return@synchronized
@@ -542,7 +545,7 @@ class UniffiEngineRuntimeGateway(
                 }
 
                 override fun onMessage(webSocket: WebSocket, text: String) {
-                    scheduler.execute {
+                    runOnScheduler {
                         synchronized(lock) {
                             if (socket !== webSocket) {
                                 return@synchronized
@@ -557,7 +560,7 @@ class UniffiEngineRuntimeGateway(
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    scheduler.execute {
+                    runOnScheduler {
                         synchronized(lock) {
                             if (socket === webSocket) {
                                 socket = null
@@ -569,7 +572,7 @@ class UniffiEngineRuntimeGateway(
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    scheduler.execute {
+                    runOnScheduler {
                         synchronized(lock) {
                             if (socket === webSocket) {
                                 socket = null
@@ -605,14 +608,14 @@ class UniffiEngineRuntimeGateway(
             password = password,
             keyPair = keyPair,
             onLine = { line ->
-                scheduler.execute {
+                runOnScheduler {
                     synchronized(lock) {
                         handleDirectMessageLocked(line)
                     }
                 }
             },
             onFailure = { message ->
-                scheduler.execute {
+                runOnScheduler {
                     synchronized(lock) {
                         directSession = null
                         directState = DirectSessionState.DISCONNECTED
@@ -623,7 +626,7 @@ class UniffiEngineRuntimeGateway(
                 }
             },
             onOpen = {
-                scheduler.execute {
+                runOnScheduler {
                     synchronized(lock) {
                         directState = DirectSessionState.OPEN
                         lastDirectError = null
@@ -1214,7 +1217,7 @@ class UniffiEngineRuntimeGateway(
         return EngineRuntimeProbeResult(
             runtimeLinked = true,
             engineStatus = "UniFFI runtime 已初始化，client=${runtime.clientName()} ${runtime.clientVersion()}",
-            bindingSurface = "surface ${runtime.bindingSurfaceVersion()}",
+            bindingSurface = "桥接层 ${runtime.bindingSurfaceVersion()}",
             connection = "${state.connection.name.lowercase()} / websocket=$hostState",
             commandQueue = queueState,
             pairedDevices = "${state.snapshot.pairedDevices.size} paired / host reports ${state.snapshot.health.pairedDeviceCount}",
@@ -1228,9 +1231,9 @@ class UniffiEngineRuntimeGateway(
             helloCommandPreview = runtime.helloCommandJson().take(180),
             pairStartCommandPreview = host?.let {
                 runtime.pairStartCommandJson(currentDeviceName, ANDROID_PLATFORM)
-            } ?: "Select a host profile first.",
+            } ?: "请先选择一个主机。",
             pairConfirmCommandPreview = if (host == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 runtime.pairConfirmCommandJson(
                     pairingCode ?: currentPairingCode.ifBlank { "PAIR-123" },
@@ -1241,7 +1244,7 @@ class UniffiEngineRuntimeGateway(
             reconnectCommandPreview = host?.let {
                 "ws ${webSocketUrl(it.hostAddress)} / token=" +
                     if (authToken.isNullOrBlank()) "pending" else "stored"
-            } ?: "Select a host profile first.",
+            } ?: "请先选择一个主机。",
             threadListCommandPreview = appServerRequestPreview(
                 runtime,
                 host,
@@ -1292,21 +1295,21 @@ class UniffiEngineRuntimeGateway(
             pairingCode = pairingCode,
             threadListSummary = threadListSummary(),
             activeThreadSummary = thread?.summary()
-                ?: "尚未从 hostd 拉到 thread。点击 Refresh 建连，然后 Start thread 或 thread/list。",
+                ?: "还没有从 hostd 拉到会话。请先点击重新连接，再新建会话或拉取列表。",
             chatTranscript = thread?.history?.joinToString("\n\n") { "[${it.role}] ${it.text}" }
-                ?: "No chat yet.",
+                ?: "还没有对话内容。",
             approvalSummary = thread?.pendingApproval?.let { "${it.title}\n${it.detail}" }
-                ?: "No pending approvals.",
-            userInputSummary = thread?.pendingUserInput?.question ?: "No pending user-input requests."
+                ?: "当前没有待处理审批。",
+            userInputSummary = thread?.pendingUserInput?.question ?: "当前没有待补充输入。"
         )
     }
 
     private fun threadListSummary(): String {
         if (threads.isEmpty()) {
-            return "No live threads yet."
+            return "还没有活动中的会话。"
         }
         return threads.values.joinToString("\n") { thread ->
-            val marker = if (thread.threadId == selectedThreadId) "• active" else "• saved"
+            val marker = if (thread.threadId == selectedThreadId) "• 当前" else "• 已保存"
             "$marker ${thread.title}  [${thread.status}]"
         }
     }
@@ -1321,9 +1324,9 @@ class UniffiEngineRuntimeGateway(
     }
 
     private fun formatQueue(state: EngineRuntimeState): String {
-        val inFlight = state.inFlightCommand?.let(::describeQueuedCommand) ?: "none"
+        val inFlight = state.inFlightCommand?.let(::describeQueuedCommand) ?: "无"
         val pending = state.pendingCommands.joinToString(", ") { describeQueuedCommand(it) }
-            .ifBlank { "none" }
+            .ifBlank { "无" }
         return "${state.pendingCommands.size} pending / in-flight=$inFlight / queue=$pending"
     }
 
@@ -1334,12 +1337,12 @@ class UniffiEngineRuntimeGateway(
 
     private fun nextSteps(state: EngineRuntimeState, host: HostProfile?): String {
         if (host == null) {
-            return "1. 先保存一个 host profile。\n2. 点击 Refresh 建立 websocket。\n3. 然后再走 pairing / thread / chat。"
+            return "1. 先保存一个主机。\n2. 点击重新连接建立链路。\n3. 再开始配对、会话和聊天。"
         }
         if (!state.authenticated) {
-            return "1. Refresh 会在无 token 时自动发起 pair_start。\n2. 把 pairing code 填回输入框后再次 Refresh 做 pair_confirm。\n3. 认证成功后再拉 thread/list。"
+            return "1. 无访问令牌时，重新连接会自动发起 pair_start。\n2. 把配对码填回输入框后再次连接，完成 pair_confirm。\n3. 认证成功后再拉取会话列表。"
         }
-        return "1. Refresh 会连到 live hostd 并拉 thread/list。\n2. Start thread / Send message 直接走 websocket + EngineRuntime queue。\n3. 审批、user-input 和 interrupt 也会回写到同一条 live transport。"
+        return "1. 重新连接会接入 live hostd 并拉取会话列表。\n2. 新建会话、发送消息会直接走 websocket 和 EngineRuntime 队列。\n3. 审批、补充输入和中断也会回写到同一条链路。"
     }
 
     private fun appServerRequestPreview(
@@ -1350,7 +1353,7 @@ class UniffiEngineRuntimeGateway(
         paramsJson: String,
     ): String {
         if (hostProfile == null) {
-            return "Select a host profile first."
+            return "请先选择一个主机。"
         }
         return runtime.appServerRequestCommandJson(
             requestId = requestId,
@@ -1364,60 +1367,60 @@ class UniffiEngineRuntimeGateway(
             runtimeLinked = false,
             engineStatus = "未能装载 Rust runtime",
             bindingSurface = "native library missing",
-            connection = "disconnected",
+            connection = "未连接",
             commandQueue = "0 pending",
             pairedDevices = "0 paired",
             reconnect = "idle",
-            diagnostics = "等待集成 host transport",
-            lastError = nativeError?.message ?: "native library missing",
+            diagnostics = "等待接入主机链路",
+            lastError = nativeError?.message ?: "原生运行时未加载",
             helloCommandPreview = "{}",
             pairStartCommandPreview = hostProfile?.let {
                 "pair_start ${it.hostAddress} as $currentDeviceName"
-            } ?: "Select a host profile first.",
+            } ?: "请先选择一个主机。",
             pairConfirmCommandPreview = hostProfile?.let {
                 "pair_confirm ${currentPairingCode.ifBlank { "<pairing-code>" }} for ${it.hostAddress}"
-            } ?: "Select a host profile first.",
+            } ?: "请先选择一个主机。",
             reconnectCommandPreview = hostProfile?.let {
                 "Reconnect entry point ready for ${it.displayName} (${it.hostAddress})"
-            } ?: "Select a host profile first.",
+            } ?: "请先选择一个主机。",
             threadListCommandPreview = if (hostProfile == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 """thread/list {"limit":100}"""
             },
             threadStartCommandPreview = if (hostProfile == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 """thread/start {}"""
             },
             threadResumeCommandPreview = if (hostProfile == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 """thread/resume {"threadId":"thread-preview"}"""
             },
             turnStartCommandPreview = if (hostProfile == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 """turn/start {"threadId":"thread-preview","input":[{"type":"text","text":"Android live message"}]}"""
             },
             turnSteerCommandPreview = if (hostProfile == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 """turn/steer {"threadId":"thread-preview","expectedTurnId":"turn-preview"}"""
             },
             interruptCommandPreview = if (hostProfile == null) {
-                "Select a host profile first."
+                "请先选择一个主机。"
             } else {
                 "turn/interrupt thread-preview turn-preview"
             },
-            nextSteps = "1. 先确保 Android 可加载 Rust FFI so。\n2. 然后重新运行 app 并点击 Refresh。\n3. live transport 会在 runtime 装载成功后启用。",
+            nextSteps = "1. 先确保 Android 能加载 Rust FFI so。\n2. 重新打开应用并点击重新连接。\n3. 原生运行时装载成功后，真实链路会自动启用。",
             authToken = hostProfile?.authToken,
             pairingCode = hostProfile?.lastPairingCode,
-            threadListSummary = "No live threads yet.",
-            activeThreadSummary = "尚未创建 thread。",
-            chatTranscript = "No chat yet.",
-            approvalSummary = "No pending approvals.",
-            userInputSummary = "No pending user-input requests."
+            threadListSummary = "还没有活动中的会话。",
+            activeThreadSummary = "还没有创建会话。",
+            chatTranscript = "还没有对话内容。",
+            approvalSummary = "当前没有待处理审批。",
+            userInputSummary = "当前没有待补充输入。"
         )
     }
 
@@ -1429,21 +1432,21 @@ class UniffiEngineRuntimeGateway(
             DirectSessionState.FAILED -> "ssh-direct / app-server=failed"
             DirectSessionState.DISCONNECTED -> "ssh-direct / app-server=disconnected"
         }
-        val sshTarget = hostProfile?.hostAddress ?: "Select a host profile first."
+        val sshTarget = hostProfile?.hostAddress ?: "请先选择一个主机。"
         return EngineRuntimeProbeResult(
             runtimeLinked = true,
-            engineStatus = "SSH direct mode: Android will launch remote codex app-server on demand.",
-            bindingSurface = "ssh-direct-app-server",
+            engineStatus = "SSH 直连模式：应用会按需拉起远端 codex app-server。",
+            bindingSurface = "SSH 直连 app-server",
             connection = connection,
-            commandQueue = "direct session / initialized=$directInitialized",
-            pairedDevices = "not used in ssh direct mode",
-            reconnect = if (directState == DirectSessionState.OPEN) "idle" else "retry on failure",
-            diagnostics = "threads=${threads.size}, lastError=${lastDirectError ?: "none"}",
-            lastError = lastDirectError ?: "none",
+            commandQueue = "直连会话 / initialized=$directInitialized",
+            pairedDevices = "SSH 直连模式下不使用设备配对",
+            reconnect = if (directState == DirectSessionState.OPEN) "空闲" else "失败后自动重试",
+            diagnostics = "会话数=${threads.size}, 最近错误=${lastDirectError ?: "无"}",
+            lastError = lastDirectError ?: "无",
             helloCommandPreview = """ssh $sshTarget 'exec codex app-server --listen stdio://'""",
-            pairStartCommandPreview = "not used in ssh direct mode",
-            pairConfirmCommandPreview = "not used in ssh direct mode",
-            reconnectCommandPreview = "Reconnect will reopen SSH and relaunch codex app-server.",
+            pairStartCommandPreview = "SSH 直连模式下不使用配对。",
+            pairConfirmCommandPreview = "SSH 直连模式下不使用配对。",
+            reconnectCommandPreview = "重新连接会重建 SSH 并再次拉起 codex app-server。",
             threadListCommandPreview = """{"method":"thread/list","params":{"limit":100}}""",
             threadStartCommandPreview = """{"method":"thread/start","params":{}}""",
             threadResumeCommandPreview = """{"method":"thread/resume","params":{"threadId":"thread-preview"}}""",
@@ -1451,17 +1454,17 @@ class UniffiEngineRuntimeGateway(
             turnSteerCommandPreview = """{"method":"turn/steer","params":{"threadId":"thread-preview","expectedTurnId":"turn-preview","input":[{"type":"text","text":"Android live message"}]}}""",
             interruptCommandPreview = """{"method":"turn/interrupt","params":{"threadId":"thread-preview","turnId":"turn-preview"}}""",
             nextSteps = if (hostProfile == null) {
-                "1. 保存一个 SSH host，例如 ssh://user@host。\n2. 在 Auth token 输入 SSH password。\n3. 点击 Refresh，Android 会直连 SSH 并拉起 codex app-server。"
+                "1. 先保存一个 SSH 主机，例如 ssh://user@host。\n2. 配好 SSH 密码或生成密钥。\n3. 点击重新连接，应用会直连 SSH 并拉起 codex app-server。"
             } else {
-                "1. Refresh 会通过 SSH 拉起远端 codex app-server。\n2. thread/chat/approval/user-input 将直接走 app-server。\n3. 当前模式不需要预先手动启动 hostd。"
+                "1. 重新连接会通过 SSH 拉起远端 codex app-server。\n2. 会话、聊天、审批和补充输入会直接走 app-server。\n3. 当前模式不需要预先手动启动 hostd。"
             },
             authToken = hostProfile?.authToken,
             pairingCode = null,
             threadListSummary = threadListSummary(),
-            activeThreadSummary = thread?.summary() ?: "尚未创建 thread。",
-            chatTranscript = thread?.history?.joinToString("\n\n") { "[${it.role}] ${it.text}" } ?: "No chat yet.",
-            approvalSummary = thread?.pendingApproval?.let { "${it.title}\n${it.detail}" } ?: "No pending approvals.",
-            userInputSummary = thread?.pendingUserInput?.question ?: "No pending user-input requests."
+            activeThreadSummary = thread?.summary() ?: "还没有创建会话。",
+            chatTranscript = thread?.history?.joinToString("\n\n") { "[${it.role}] ${it.text}" } ?: "还没有对话内容。",
+            approvalSummary = thread?.pendingApproval?.let { "${it.title}\n${it.detail}" } ?: "当前没有待处理审批。",
+            userInputSummary = thread?.pendingUserInput?.question ?: "当前没有待补充输入。"
         )
     }
 
@@ -1471,6 +1474,16 @@ class UniffiEngineRuntimeGateway(
             root.getJSONObject("payload").toString()
         } else {
             rawMessage
+        }
+    }
+
+    private fun runOnScheduler(block: () -> Unit) {
+        if (scheduler.isShutdown) {
+            return
+        }
+        try {
+            scheduler.execute(block)
+        } catch (_: RejectedExecutionException) {
         }
     }
 
@@ -1582,45 +1595,74 @@ private class DirectSshAppServerSession(
 
     fun open() {
         thread(name = "codex-island-ssh-direct", isDaemon = true) {
+            var stage = "connect"
             try {
                 val (user, host, port) = parseTarget(sshTarget)
-                val client = SSHClient()
+                Log.d(LOG_TAG, "SSH direct opening target=$sshTarget stage=$stage")
+                val client = SSHClient(androidCompatibleConfig())
                 client.addHostKeyVerifier(PromiscuousVerifier())
+                client.setConnectTimeout(SSH_CONNECT_TIMEOUT_MS)
+                client.setTimeout(SSH_IO_TIMEOUT_MS)
                 client.connect(host, port)
+                stage = "auth"
+                Log.d(LOG_TAG, "SSH direct connected target=$sshTarget stage=$stage")
                 if (keyPair != null) {
                     client.authPublickey(user, client.loadKeys(keyPair.toJavaKeyPair()))
                 } else {
                     client.authPassword(user, password ?: error("SSH password is missing"))
                 }
+                stage = "session"
+                Log.d(LOG_TAG, "SSH direct authenticated target=$sshTarget stage=$stage")
                 val directSession = client.startSession()
+                stage = "exec"
+                Log.d(LOG_TAG, "SSH direct session started target=$sshTarget stage=$stage")
                 val directCommand = directSession.exec("exec codex app-server --listen stdio://")
+                Log.d(LOG_TAG, "SSH direct exec started target=$sshTarget")
                 sshClient = client
                 session = directSession
                 command = directCommand
                 writer = directCommand.outputStream.bufferedWriter()
                 onOpen()
+                Log.d(LOG_TAG, "SSH direct onOpen target=$sshTarget")
 
                 readerThread = thread(name = "codex-island-ssh-direct-reader", isDaemon = true) {
                     try {
                         directCommand.inputStream.bufferedReader().useLines { lines ->
                             lines.forEach { line ->
                                 if (line.isNotBlank()) {
+                                    Log.d(LOG_TAG, "SSH direct stdout line=${line.take(240)}")
                                     onLine(line)
                                 }
                             }
                         }
                     } catch (throwable: Throwable) {
+                        Log.e(LOG_TAG, "SSH direct reader failure target=$sshTarget", throwable)
                         onFailure(throwable.message ?: "SSH direct reader failed")
                     }
                 }
+                thread(name = "codex-island-ssh-direct-stderr", isDaemon = true) {
+                    try {
+                        directCommand.errorStream.bufferedReader().useLines { lines ->
+                            lines.forEach { line ->
+                                if (line.isNotBlank()) {
+                                    Log.w(LOG_TAG, "SSH direct stderr line=${line.take(240)}")
+                                }
+                            }
+                        }
+                    } catch (throwable: Throwable) {
+                        Log.e(LOG_TAG, "SSH direct stderr reader failure target=$sshTarget", throwable)
+                    }
+                }
             } catch (throwable: Throwable) {
-                onFailure(throwable.message ?: "SSH direct launch failed")
+                Log.e(LOG_TAG, "SSH direct open failure target=$sshTarget stage=$stage", throwable)
+                onFailure(throwable.message ?: "SSH direct launch failed during $stage")
             }
         }
     }
 
     fun send(line: String) {
         val activeWriter = writer ?: error("SSH direct writer is unavailable")
+        Log.d(LOG_TAG, "SSH direct send line=${line.take(240)}")
         activeWriter.write(line)
         activeWriter.newLine()
         activeWriter.flush()
@@ -1649,6 +1691,7 @@ private class DirectSshAppServerSession(
         sshClient = null
         readerThread?.interrupt()
         readerThread = null
+        Log.d(LOG_TAG, "SSH direct closed target=$sshTarget")
     }
 
     private fun parseTarget(rawTarget: String): Triple<String, String, Int> {
@@ -1659,6 +1702,21 @@ private class DirectSshAppServerSession(
         val host = hostPort.substringBefore(':')
         val port = hostPort.substringAfter(':', "22").toIntOrNull() ?: 22
         return Triple(user, host, port)
+    }
+
+    private companion object {
+        private const val LOG_TAG = "CodexIslandSSH"
+        private const val SSH_CONNECT_TIMEOUT_MS = 8_000
+        private const val SSH_IO_TIMEOUT_MS = 8_000
+
+        private fun androidCompatibleConfig(): DefaultSecurityProviderConfig {
+            return DefaultSecurityProviderConfig().apply {
+                keyExchangeFactories = keyExchangeFactories.filterNot { factory ->
+                    val name = factory.name.lowercase()
+                    name.contains("curve25519") || name.contains("sntrup") || name.contains("mlkem")
+                }
+            }
+        }
     }
 }
 
