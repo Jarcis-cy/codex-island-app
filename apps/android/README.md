@@ -80,9 +80,30 @@ The repository now includes:
 
 - a Robolectric JVM test for `MainActivity`
 - an instrumentation smoke test for `MainActivity`
+- instrumentation workflow tests for SSH mode, key generation, thread actions,
+  approvals, and request-user-input UI flows
 - bootstrap workspace and thread/chat view-model tests
 - automatic Rust Android `.so` packaging during Gradle `preBuild`
 - Gradle wrapper files under `apps/android/`
+
+Run release APK build + install smoke on a connected device with:
+
+```bash
+./scripts/android-release-smoke.sh
+```
+
+Run the layered local acceptance entry point with:
+
+```bash
+./scripts/android-lab-acceptance.sh
+```
+
+`android-lab-acceptance.sh` runs the connected Android test lane, then builds
+and launches the release APK on a connected device. If you provide
+`ANDROID_LAB_REMOTE_REPO_PATH`, `ANDROID_LAB_MAC_HOST_SSH`,
+`ANDROID_LAB_MAC_HOST_BIND`, `ANDROID_LAB_LINUX_HOST_SSH`, and
+`ANDROID_LAB_LINUX_HOST_BIND`, it also starts remote `codex-island-hostd`
+processes and collects their logs into `build/android-lab-acceptance/`.
 
 ## Suggested macOS Workflow
 
@@ -92,4 +113,5 @@ The repository now includes:
    `ndk;27.0.12077973`.
 3. Create or boot an emulator from Android Studio Device Manager if you want to
    run `connectedDebugAndroidTest`.
-4. Run `./scripts/android-test.sh`.
+4. Run `./scripts/android-test.sh --connected`.
+5. Connect a physical device and run `./scripts/android-release-smoke.sh`.

@@ -2,6 +2,7 @@ package com.codexisland.android
 
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
+import androidx.test.espresso.action.ViewActions.scrollTo
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
 import androidx.test.espresso.matcher.ViewMatchers.withId
@@ -17,7 +18,7 @@ class MainActivityInstrumentedTest {
         ActivityScenario.launch(MainActivity::class.java).use {
             onView(withText(R.string.shell_header_title)).check(matches(isDisplayed()))
             onView(withId(R.id.runtimeStatusChip)).check(matches(isDisplayed()))
-            onView(withId(R.id.hostConnectionEditText)).check(matches(isDisplayed()))
+            onView(withId(R.id.hostConnectionEditText)).perform(scrollTo()).check(matches(isDisplayed()))
         }
     }
 }
