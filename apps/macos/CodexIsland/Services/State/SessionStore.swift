@@ -163,6 +163,11 @@ actor SessionStore {
 
         session.logicalSessionId = resolveLogicalSessionId(for: session)
 
+        if event.provider == .codex, event.isClearSessionStart {
+            session.needsClearReconciliation = true
+            session.pendingInteractions.removeAll()
+        }
+
         if event.status == "ended" {
             removeSession(sessionId: sessionId)
             return

@@ -18,6 +18,7 @@ struct HookEvent: Codable, Sendable {
     let provider: SessionProvider
     let cwd: String
     let transcriptPath: String?
+    let source: String?
     let event: String
     let status: String
     let pid: Int?
@@ -41,6 +42,7 @@ struct HookEvent: Codable, Sendable {
         case terminalTabId = "terminal_tab_id"
         case terminalSurfaceId = "terminal_surface_id"
         case transcriptPath = "transcript_path"
+        case source
         case turnId = "turn_id"
         case tool
         case toolInput = "tool_input"
@@ -50,11 +52,12 @@ struct HookEvent: Codable, Sendable {
     }
 
     /// Create a copy with updated toolUseId
-    init(sessionId: String, provider: SessionProvider, cwd: String, transcriptPath: String?, event: String, status: String, pid: Int?, tty: String?, terminalName: String?, terminalWindowId: String?, terminalTabId: String?, terminalSurfaceId: String?, turnId: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
+    init(sessionId: String, provider: SessionProvider, cwd: String, transcriptPath: String?, source: String? = nil, event: String, status: String, pid: Int?, tty: String?, terminalName: String?, terminalWindowId: String?, terminalTabId: String?, terminalSurfaceId: String?, turnId: String?, tool: String?, toolInput: [String: AnyCodable]?, toolUseId: String?, notificationType: String?, message: String?) {
         self.sessionId = sessionId
         self.provider = provider
         self.cwd = cwd
         self.transcriptPath = transcriptPath
+        self.source = source
         self.event = event
         self.status = status
         self.pid = pid
@@ -77,6 +80,7 @@ struct HookEvent: Codable, Sendable {
         provider = try container.decodeIfPresent(SessionProvider.self, forKey: .provider) ?? .claude
         cwd = try container.decode(String.self, forKey: .cwd)
         transcriptPath = try container.decodeIfPresent(String.self, forKey: .transcriptPath)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
         event = try container.decode(String.self, forKey: .event)
         status = try container.decode(String.self, forKey: .status)
         pid = try container.decodeIfPresent(Int.self, forKey: .pid)
@@ -99,6 +103,7 @@ struct HookEvent: Codable, Sendable {
         try container.encode(provider, forKey: .provider)
         try container.encode(cwd, forKey: .cwd)
         try container.encodeIfPresent(transcriptPath, forKey: .transcriptPath)
+        try container.encodeIfPresent(source, forKey: .source)
         try container.encode(event, forKey: .event)
         try container.encode(status, forKey: .status)
         try container.encodeIfPresent(pid, forKey: .pid)
@@ -144,6 +149,15 @@ struct HookEvent: Codable, Sendable {
     /// Whether this event expects a response (permission request)
     nonisolated var expectsResponse: Bool {
         event == "PermissionRequest" && status == "waiting_for_approval"
+    }
+
+    nonisolated var isClearSessionStart: Bool {
+        guard event == "SessionStart",
+              let source = source?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
+              !source.isEmpty else {
+            return false
+        }
+        return source.contains("clear")
     }
 }
 

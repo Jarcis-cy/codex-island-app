@@ -147,11 +147,28 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(sessions.isEmpty)
     }
 
+    func testClearSessionStartMarksSessionForHistoryReconciliation() async {
+        await SessionStore.shared.process(.hookReceived(
+            makeHookEvent(
+                sessionId: "session-1",
+                tty: "/dev/ttys001",
+                source: "clear"
+            )
+        ))
+
+        let session = await SessionStore.shared.allSessions().first
+
+        XCTAssertEqual(session?.phase, .idle)
+        XCTAssertEqual(session?.pendingInteractions.count, 0)
+        XCTAssertEqual(session?.needsClearReconciliation, true)
+    }
+
     private func makeHookEvent(
         sessionId: String,
         tty: String?,
         pid: Int? = nil,
         cwd: String = "/tmp/project",
+        source: String? = nil,
         terminalName: String = "Apple_Terminal",
         terminalWindowId: String? = nil,
         terminalTabId: String? = nil,
@@ -162,6 +179,7 @@ final class SessionStoreTests: XCTestCase {
             provider: .codex,
             cwd: cwd,
             transcriptPath: nil,
+            source: source,
             event: "SessionStart",
             status: "waiting_for_input",
             pid: pid,

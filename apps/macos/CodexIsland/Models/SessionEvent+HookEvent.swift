@@ -48,6 +48,8 @@ extension HookEvent {
         switch event {
         case "UserPromptSubmit", "PreToolUse", "PostToolUse", "Stop":
             return true
+        case "SessionStart":
+            return isClearSessionStart
         default:
             return false
         }

@@ -294,6 +294,7 @@ def main():
             "session_id": session_id,
             "cwd": cwd,
             "transcript_path": transcript_path,
+            "source": payload.get("source"),
             "turn_id": turn_id,
             "event": event,
             "pid": os.getppid(),
@@ -320,6 +321,12 @@ def main():
             state["tool_use_id"] = payload.get("tool_use_id")
         elif event == "Stop":
             state["status"] = "waiting_for_input"
+            state["message"] = (
+                payload.get("message")
+                or payload.get("reason")
+                or payload.get("prompt")
+                or payload.get("warning")
+            )
         else:
             # Unknown/new hook events should still reach the app for logging and future compatibility
             # instead of being dropped by an overly strict local script.
