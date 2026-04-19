@@ -69,6 +69,9 @@ Run build + JVM tests + device/emulator instrumentation tests:
 ./scripts/android-test.sh --connected
 ```
 
+`--connected` 默认只跑基础 instrumentation smoke / workflow tests，不包含
+需要真实远端 SSH 环境的 live acceptance 类。
+
 Start a real hostd endpoint on a same-tailnet macOS/Linux host for Android
 acceptance:
 
@@ -103,7 +106,8 @@ and launches the release APK on a connected device. If you provide
 `ANDROID_LAB_REMOTE_REPO_PATH`, `ANDROID_LAB_MAC_HOST_SSH`,
 `ANDROID_LAB_MAC_HOST_BIND`, `ANDROID_LAB_LINUX_HOST_SSH`, and
 `ANDROID_LAB_LINUX_HOST_BIND`, it also starts remote `codex-island-hostd`
-processes and collects their logs into `build/android-lab-acceptance/`.
+processes and collects their logs into `build/android-lab-acceptance/`. 真实
+live SSH instrumentation 应在这类验收路径中单独执行，而不是混入基础 CI。
 
 ## Suggested macOS Workflow
 

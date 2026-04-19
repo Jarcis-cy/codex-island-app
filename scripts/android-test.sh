@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ANDROID_DIR="$ROOT_DIR/apps/android"
 RUN_CONNECTED=0
+CONNECTED_TEST_EXCLUDES=(
+    "com.codexisland.android.MainActivityLiveSshInstrumentedTest"
+    "com.codexisland.android.UniffiEngineRuntimeGatewayLiveSshInstrumentedTest"
+)
 BOOTSTRAP_LOG="$(mktemp -t codex-island-android-bootstrap.XXXXXX)"
 trap 'rm -f "$BOOTSTRAP_LOG"' EXIT
 
@@ -63,12 +67,18 @@ export PATH="$JAVA_HOME/bin:$ANDROID_SDK_ROOT/platform-tools:$PATH"
 pushd "$ANDROID_DIR" >/dev/null
 ./gradlew --no-daemon :app:assembleDebug :app:testDebugUnitTest
 
+connected_test_args=(
+    --no-daemon
+    :app:connectedDebugAndroidTest
+    "-Pandroid.testInstrumentationRunnerArguments.notClass=$(IFS=,; echo "${CONNECTED_TEST_EXCLUDES[*]}")"
+)
+
 if (( RUN_CONNECTED == 1 )); then
     wait_for_android_test_device 180
-    ./gradlew --no-daemon :app:connectedDebugAndroidTest
+    ./gradlew "${connected_test_args[@]}"
 elif command -v adb >/dev/null 2>&1 && adb devices | awk 'NR > 1 && $2 == "device" { found = 1 } END { exit(found ? 0 : 1) }'; then
     wait_for_android_test_device 180
-    ./gradlew --no-daemon :app:connectedDebugAndroidTest
+    ./gradlew "${connected_test_args[@]}"
 else
     echo "skip connectedDebugAndroidTest: no booted emulator or attached device"
 fi
