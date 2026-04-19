@@ -9,7 +9,7 @@ import Combine
 import Foundation
 
 @MainActor
-final class SharedEngineRemoteSessionBackend: ObservableObject, RemoteSessionControlling {
+final class SharedEngineRemoteSessionBackend: RemoteSessionControlling {
     @Published private(set) var hosts: [RemoteHostConfig]
     @Published private(set) var threads: [RemoteThreadState] = []
     @Published private(set) var hostStates: [String: RemoteHostConnectionState] = [:]
