@@ -48,6 +48,7 @@ jobs:
           SWIFT_ENABLE_EXPLICIT_MODULES=NO
           -parallel-testing-enabled NO
           -destination 'platform=macOS'
+          -skip-testing:CodexIslandTests/EngineShellAdapterTests
           -skip-testing:CodexIslandTests/CompositeRemoteSessionBackendTests
           -skip-testing:CodexIslandTests/RemoteSessionControllerTests
           -skip-testing:CodexIslandTests/SharedEngineRemoteSessionBackendTests
@@ -63,6 +64,7 @@ jobs:
           SWIFT_ENABLE_EXPLICIT_MODULES=NO
           -parallel-testing-enabled NO
           -destination 'platform=macOS'
+          -only-testing:CodexIslandTests/EngineShellAdapterTests
           -only-testing:CodexIslandTests/CompositeRemoteSessionBackendTests
           -only-testing:CodexIslandTests/RemoteSessionControllerTests
           -only-testing:CodexIslandTests/SharedEngineRemoteSessionBackendTests
