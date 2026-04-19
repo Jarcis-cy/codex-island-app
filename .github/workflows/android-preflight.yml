@@ -42,5 +42,6 @@ jobs:
         with:
           api-level: 35
           arch: x86_64
-          profile: pixel_8
+          target: google_apis
+          profile: pixel_6
           script: ./scripts/android-test.sh --connected
